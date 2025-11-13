@@ -1,44 +1,47 @@
 import logging
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 
-# Logger sozlamalari
+# Logging sozlamalari
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
-# Tokenni bu yerga qo'yamiz
+# Telegram Bot Tokeningizni shu yerga yozing
 TOKEN = "8294906702:AAHkYE73B6m5NokLedyUBsUTXib4XdLQ2BE"
-
-# /start komandasi
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "SALOM! MENGA INSTAGRAM VIDEO LINKINI YUBORING, SIZGA VIDEO QILIB YUBORAMAN!"
-    )
 
 # Linklarni qayta ishlash
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     if "www.instagram.com" in text:
+        # www.instagram.com ni kkinstagram.com ga o'zgartirish
         new_link = text.replace("www.instagram.com", "kkinstagram.com")
+        # HTML formatida LINK yozuvi, bosilganda yangi linkga yo'naltiradi
         await update.message.reply_text(
-            f"Link: {new_link}\n📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakirShaX_Price"
+            f'SALOM! MENGA INSTAGRAM VIDEO LINKINI YUBORING SIZGA VIDEO QILIB YUBORAMAN!\n\n'
+            f'LINK: <a href="{new_link}">LINK</a>\n'
+            f'📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakirShaX_Price',
+            parse_mode='HTML'
         )
     else:
         await update.message.reply_text(
-            "Bu link xususiy emas yoki boshqa saytga tegishli."
+            "❌ Kechirasiz, bu linkni qayta ishlay olmayman yoki xususiy hisob bo‘lishi mumkin."
         )
 
-def main():
+# Bot ishga tushirish
+async def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Foydalanuvchidan kelgan matnlarni ushlash
+    message_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
+    app.add_handler(message_handler)
 
-    print("🚀 Bot ishga tushdi...")
-    app.run_polling()
+    logger.info("🚀 Bot ishga tushdi...")
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())
