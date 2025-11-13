@@ -9,7 +9,7 @@ logging.basicConfig(
 )
 
 # Tokenni bu yerga joylashtiring
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"
+TOKEN = "8294906702:AAHkYE73B6m5NokLedyUBsUTXib4XdLQ2BE"
 
 # /start komandasi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
