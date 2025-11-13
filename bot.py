@@ -3,79 +3,66 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 
-# TOKEN Railway Environment Variable dan olinadi
-TOKEN = os.environ.get("TOKEN")
+# Token config.py yoki Railway Variables dan olinadi
+TOKEN = os.getenv("TOKEN")
 
-def is_private_instagram(url: str) -> bool:
-    """Instagram post public yoki private ekanini tekshiradi"""
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return True
-        if "login" in response.url:
-            return True
-        return False
-    except Exception:
-        return True
-
-def modify_private_link(url: str) -> str:
-    """Private post linkni kk-instagram variantiga o‘zgartiradi"""
-    modified = url.replace("www.instagram.com", "kkinstagram.com")
-    modified = modified.replace("kkinstagram..com", "kkinstagram.com")
-    return modified
-
+# Start komandasi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Salom! 👋 Instagramdan video link yuboring — men uni yuklab beraman!"
+        "Salom! Instagramdan video link yuboring! Men uni yuklab beraman!"
     )
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    match = re.search(r"(https?://(www\.)?instagram\.com/[^\s]+)", text)
+# Instagram videoni olish funksiyasi
+def get_instagram_video(url):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
 
-    if not match:
-        await update.message.reply_text("⚠️ Iltimos, to‘g‘ri Instagram link yuboring.")
+    response = requests.get(url, headers=headers)
+    if "login" in response.url or "private" in response.text.lower():
+        return None
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    video_tag = soup.find("meta", property="og:video")
+
+    if video_tag and video_tag.get("content"):
+        return video_tag["content"]
+    return None
+
+# Asosiy xabarni qayta ishlovchi funksiya
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text.strip()
+
+    if "instagram.com" not in url:
+        await update.message.reply_text("Iltimos, to‘g‘ri Instagram link yuboring.")
         return
 
-    url = match.group(0)
+    # Video olishga harakat
+    video_url = get_instagram_video(url)
 
-    if is_private_instagram(url):
-        modified = modify_private_link(url)
-        await update.message.reply_text(
-            f"🔒 Bu post private hisobga tegishli.\n\n👉 Shu linkdan kirib ko‘rishingiz mumkin:\n{modified}"
-        )
-        await update.message.reply_text(
-            "🎮 PUBG MOBILE uchun eng arzon UC SERVIC — @ZakirShaX_Price"
-        )
+    if video_url:
+        # Ochiq akkauntdagi video topildi
+        await update.message.reply_video(video_url)
+        await update.message.reply_text("🎥 VIDEO YUKLANDI, KO‘CHIRIB OLISHINGIZ MUMKIN ✅\n\nPUBG MOBILE uchun eng arzon UC servis 👉 @ZakirShaX_Price")
     else:
-        try:
-            headers = {"User-Agent": "Mozilla/5.0"}
-            response = requests.get(url, headers=headers, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            video_tag = soup.find('meta', property='og:video')
+        # Privat yoki login talab qiladigan akkaunt
+        new_link = re.sub(r"www\.instagram\.com", "kkinstagram.com", url)
+        await update.message.reply_text(
+            f"🎥 VIDEO YUKLANDI, KO‘CHIRIB OLISHINGIZ MUMKIN ✅\n\nPUBG MOBILE uchun eng arzon UC servis 👉 @ZakirShaX_Price\n\n🔗 {new_link}"
+        )
 
-            if video_tag:
-                video_url = video_tag.get("content")
-                await update.message.reply_video(video_url)
-                await update.message.reply_text(
-                    "🎮 PUBG MOBILE uchun eng arzon UC SERVIC — @ZakirShaX_Price"
-                )
-            else:
-                modified = modify_private_link(url)
-                await update.message.reply_text(
-                    f"❌ Video topilmadi, lekin linkni o‘zgartirdim:\n{modified}"
-                )
-                await update.message.reply_text(
-                    "🎮 PUBG MOBILE uchun eng arzon UC SERVIC — @ZakirShaX_Price"
-                )
-        except Exception as e:
-            await update.message.reply_text(f"Xatolik yuz berdi: {str(e)}")
-
+# Asosiy ishga tushirish funksiyasi
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
