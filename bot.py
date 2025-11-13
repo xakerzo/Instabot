@@ -8,8 +8,8 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Tokenni bu yerga joylashtiring
-TOKEN = "8294906702:AAHkYE73B6m5NokLedyUBsUTXib4XdLQ2BE"
+# Tokenni bu yerga qo'yamiz
+TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"
 
 # /start komandasi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -24,7 +24,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "www.instagram.com" in text:
         new_link = text.replace("www.instagram.com", "kkinstagram.com")
         await update.message.reply_text(
-            f"Private Instagram linki aniqlangan! Mana sizga o‘zgartirilgan link:\n{new_link}"
+            f"Link: {new_link}\n📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakirShaX_Price"
         )
     else:
         await update.message.reply_text(
