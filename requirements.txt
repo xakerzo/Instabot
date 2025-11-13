@@ -1,6 +1,2 @@
-python-telegram-bot==20.6
+python-telegram-bot==21.4
 requests
-beautifulsoup4
-python-telegram-bot==20.7
-beautifulsoup4==4.12.3
-requests==2.32.3
