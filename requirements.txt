@@ -1,7 +1,2 @@
-<<<<<<< HEAD
-python-telegram-bot==21.4
-requests
-=======
 python-telegram-bot==20.3
 requests==2.31.0
->>>>>>> 7545121 (Yangilangan kod: ApplicationBuilder polling va video yuklash tuzatildi)
