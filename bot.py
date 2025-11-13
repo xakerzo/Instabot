@@ -1,241 +1,86 @@
-# bot.py
-"""
-Telegram bot to download public Instagram videos (no login).
-For private accounts the bot will return a modified link by replacing
-'instagram.com' hosts with 'kkinstagram.com' (no dot after 'kk').
-And shows a promotional message for PUBG Mobile UC service.
-
-Requirements:
-  pip install python-telegram-bot==20.6 requests beautifulsoup4
-
-Usage:
-  1. Create config.py with a line: TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
-  2. Run: python bot.py
-"""
-
 import os
 import re
-import tempfile
-import logging
-import html
-from typing import Optional
-
 import requests
 from bs4 import BeautifulSoup
-
 from telegram import Update
-from telegram.constants import ChatAction
-from telegram.error import TelegramError, BadRequest
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CommandHandler, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Load TOKEN from config.py
-try:
-    from config import TOKEN
-except Exception:
-    TOKEN = None
+# TOKEN Railway Environment Variable dan olinadi
+TOKEN = os.environ.get("TOKEN")
 
-USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-HEADERS = {"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9"}
-DOWNLOAD_TIMEOUT = 60  # seconds
-LOG_LEVEL = logging.INFO
-
-logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger(__name__)
-
-INSTAGRAM_HOSTS = ["www.instagram.com", "instagram.com", "m.instagram.com"]
-
+def is_private_instagram(url: str) -> bool:
+    """Instagram post public yoki private ekanini tekshiradi"""
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            return True
+        if "login" in response.url:
+            return True
+        return False
+    except Exception:
+        return True
 
 def modify_private_link(url: str) -> str:
-    """Replace instagram host with kkinstagram.com (no dot after kk)."""
-    for host in INSTAGRAM_HOSTS:
-        if host in url:
-            return url.replace(host, "kkinstagram.com")
-    if "instagram" in url and not url.startswith("http"):
-        return "https://kkinstagram.com/" + url
-    return url
+    """Private post linkni kk-instagram variantiga o‘zgartiradi"""
+    modified = url.replace("www.instagram.com", "kkinstagram.com")
+    modified = modified.replace("kkinstagram..com", "kkinstagram.com")
+    return modified
 
-
-def extract_instagram_video_url(page_html: str) -> Optional[str]:
-    """Try to extract a direct video URL from Instagram page HTML."""
-    soup = BeautifulSoup(page_html, "html.parser")
-
-    meta = soup.find("meta", property="og:video") or soup.find("meta", property="og:video:secure_url")
-    if meta and meta.get("content"):
-        return meta["content"]
-
-    for script in soup.find_all("script", type="application/ld+json"):
-        try:
-            txt = script.string
-            if not txt:
-                continue
-            if "contentUrl" in txt:
-                m = re.search(r'"contentUrl"\s*:\s*"([^"]+)"', txt)
-                if m:
-                    return m.group(1)
-        except Exception:
-            continue
-
-    for s in soup.find_all("script"):
-        if not s.string:
-            continue
-        text = s.string
-        if "video_url" in text:
-            m = re.search(r'"video_url"\s*:\s*"([^"]+)"', text)
-            if m:
-                return m.group(1).replace(r"\/", "/").replace(r"\u0026", "&")
-        if "display_url" in text:
-            m2 = re.search(r'"display_url"\s*:\s*"([^"]+)"', text)
-            if m2:
-                return m2.group(1).replace(r"\/", "/")
-
-    return None
-
-
-def download_to_temp(url: str, headers: dict, timeout: int = DOWNLOAD_TIMEOUT) -> Optional[str]:
-    """Download a URL to a temporary file and return the file path, or None on failure."""
-    try:
-        with requests.get(url, headers=headers, timeout=timeout, stream=True) as r:
-            r.raise_for_status()
-            suffix = ".mp4"
-            fd, tmp_path = tempfile.mkstemp(suffix=suffix)
-            os.close(fd)
-            with open(tmp_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-            return tmp_path
-    except Exception as e:
-        logger.exception("Failed to download file: %s", e)
-        return None
-
-
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Salom! Instagramdan video link yuboring! Men uni yuklab beraman!")
-
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Salom! 👋 Instagramdan video link yuboring — men uni yuklab beraman!"
+    )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (update.message.text or "").strip()
-    if not text:
-        await update.message.reply_text("Link yuboring.")
+    text = update.message.text.strip()
+    match = re.search(r"(https?://(www\.)?instagram\.com/[^\s]+)", text)
+
+    if not match:
+        await update.message.reply_text("⚠️ Iltimos, to‘g‘ri Instagram link yuboring.")
         return
 
-    m = re.search(r"(https?://[\w\./\-\?=&%]+instagram\.com[\w\./\-\?=&%]*)", text)
-    if not m:
-        m2 = re.search(r"(instagram\.com/[\w\./\-\?=&%]+)", text)
-        if m2:
-            url = "https://" + m2.group(1)
-        else:
-            await update.message.reply_text(
-                "Instagram linkini yuboring (misol: https://www.instagram.com/p/POST_ID/ yoki https://www.instagram.com/reel/REEL_ID/)"
-            )
-            return
+    url = match.group(0)
+
+    if is_private_instagram(url):
+        modified = modify_private_link(url)
+        await update.message.reply_text(
+            f"🔒 Bu post private hisobga tegishli.\n\n👉 Shu linkdan kirib ko‘rishingiz mumkin:\n{modified}"
+        )
+        await update.message.reply_text(
+            "🎮 PUBG MOBILE uchun eng arzon UC SERVIC — @ZakirShaX_Price"
+        )
     else:
-        url = m.group(0)
-
-    chat_id = update.effective_chat.id
-
-    try:
-        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_VIDEO)
-    except Exception:
-        pass
-
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-    except Exception as e:
-        logger.exception("Request failed: %s", e)
-        await update.message.reply_text(f"URL ga ulanishda xatolik bo'ldi: {e}")
-        return
-
-    if resp.status_code != 200:
-        modified = modify_private_link(url)
-        escaped = html.escape(modified, quote=True)
-        msg = (f"<b>VIDEO YUKLANDI! KO'CHIRIB OLISHINGIZ MUMKIN</b>\n"
-               f"Link: <a href=\"{escaped}\">Video Link</a>\n"
-               f"📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakirShaX_Price")
         try:
-            await update.message.reply_text(msg, parse_mode="HTML")
-        except BadRequest as e:
-            logger.warning("Failed to send modified link (BadRequest): %s", e)
-            await update.message.reply_text(f"Link: {modified}\nPUBG MOBILE UC: @ZakirShaX_Price")
-        return
+            headers = {"User-Agent": "Mozilla/5.0"}
+            response = requests.get(url, headers=headers, timeout=10)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            video_tag = soup.find('meta', property='og:video')
 
-    page_text = resp.text
-    if ("login" in page_text.lower() and ("required" in page_text.lower() or "log in" in page_text.lower())):
-        modified = modify_private_link(url)
-        escaped = html.escape(modified, quote=True)
-        msg = (f"<b>VIDEO YUKLANDI! KO'CHIRIB OLISHINGIZ MUMKIN</b>\n"
-               f"Link: <a href=\"{escaped}\">Video Link</a>\n"
-               f"📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakirShaX_Price")
-        try:
-            await update.message.reply_text(msg, parse_mode="HTML")
-        except BadRequest:
-            await update.message.reply_text(f"Link: {modified}\nPUBG MOBILE UC: @ZakirShaX_Price")
-        return
-
-    video_url = extract_instagram_video_url(page_text)
-
-    if not video_url:
-        modified = modify_private_link(url)
-        escaped = html.escape(modified, quote=True)
-        msg = (f"<b>VIDEO YUKLANDI! KO'CHIRIB OLISHINGIZ MUMKIN</b>\n"
-               f"Link: <a href=\"{escaped}\">Video Link</a>\n"
-               f"📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakirShaX_Price")
-        try:
-            await update.message.reply_text(msg, parse_mode="HTML")
-        except BadRequest:
-            await update.message.reply_text(f"Link: {modified}\nPUBG MOBILE UC: @ZakirShaX_Price")
-        return
-
-    tmp_path = download_to_temp(video_url, HEADERS, timeout=DOWNLOAD_TIMEOUT)
-    if not tmp_path:
-        modified = modify_private_link(url)
-        escaped = html.escape(modified, quote=True)
-        msg = (f"<b>VIDEO YUKLANDI! KO'CHIRIB OLISHINGIZ MUMKIN</b>\n"
-               f"Link: <a href=\"{escaped}\">Video Link</a>\n"
-               f"📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakirShaX_Price")
-        try:
-            await update.message.reply_text(msg, parse_mode="HTML")
-        except BadRequest:
-            await update.message.reply_text(f"Link: {modified}\nPUBG MOBILE UC: @ZakirShaX_Price")
-        return
-
-    try:
-        with open(tmp_path, "rb") as video_file:
-            await update.message.reply_video(video=video_file)
-    except BadRequest as e:
-        logger.exception("BadRequest when sending video: %s", e)
-        modified = modify_private_link(url)
-        escaped = html.escape(modified, quote=True)
-        msg = (f"<b>VIDEO YUKLANDI! KO'CHIRIB OLISHINGIZ MUMKIN</b>\n"
-               f"Link: <a href=\"{escaped}\">Video Link</a>\n"
-               f"📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakirShaX_Price")
-        try:
-            await update.message.reply_text(msg, parse_mode="HTML")
-        except Exception:
-            await update.message.reply_text(f"Link: {modified}\nPUBG MOBILE UC: @ZakirShaX_Price")
-    except TelegramError as e:
-        logger.exception("Telegram error sending video: %s", e)
-        await update.message.reply_text(f"Videoni yuborishda xatolik yuz berdi. PUBG MOBILE UC: @ZakirShaX_Price")
-    finally:
-        try:
-            os.remove(tmp_path)
-        except Exception:
-            pass
-
+            if video_tag:
+                video_url = video_tag.get("content")
+                await update.message.reply_video(video_url)
+                await update.message.reply_text(
+                    "🎮 PUBG MOBILE uchun eng arzon UC SERVIC — @ZakirShaX_Price"
+                )
+            else:
+                modified = modify_private_link(url)
+                await update.message.reply_text(
+                    f"❌ Video topilmadi, lekin linkni o‘zgartirdim:\n{modified}"
+                )
+                await update.message.reply_text(
+                    "🎮 PUBG MOBILE uchun eng arzon UC SERVIC — @ZakirShaX_Price"
+                )
+        except Exception as e:
+            await update.message.reply_text(f"Xatolik yuz berdi: {str(e)}")
 
 def main():
-    if not TOKEN:
-        print('Iltimos config.py faylida TOKEN ni sozlang: TOKEN = "YOUR_BOT_TOKEN"')
-        return
-
     app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Bot ishga tushdi…")
+    print("✅ Bot ishga tushdi...")
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
