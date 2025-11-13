@@ -1,148 +1,80 @@
+# bot.py
+import os
 import logging
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-import os
-import requests
-<<<<<<< HEAD
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from config import TOKEN  # TOKEN ni config.py dan oladi
 
-TOKEN = os.getenv("BOT_TOKEN")
-
+# Logging sozlamalari
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
-# Instagram linkni tekshirish
-def is_private_instagram_link(url):
-    return "instagram.com" in url and not any([
-        "reel" in url,
-        "p/" in url,
-        "tv/" in url
-    ])
+# Sizning video yuklash funksiyangiz (placeholder)
+def download_instagram_video(url):
+    """
+    Bu funksiya ochiq videolarni yuklash uchun ishlatiladi.
+    Agar video topilsa, video fayl yoki URL qaytaradi.
+    Agar private bo'lsa, None qaytaradi.
+    """
+    # Hozirgi kodda faqat simulyatsiya qilamiz
+    if "instagram.com" in url and "private" not in url:
+        return url  # Ochiq video uchun URL yoki fayl
+    else:
+        return None  # Private yoki xato
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Salom! Menga Instagram video link yuboring.")
-
-async def handle_instagram(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-
-    if "instagram.com" not in text:
-        await update.message.reply_text("❌ Iltimos, Instagram link yuboring.")
-        return
-
-    # Privat hisobni tekshirish
-    if "www.instagram.com" in text:
-        if "reel" not in text and "p/" not in text and "tv/" not in text:
-            new_link = text.replace("www.instagram.com", "kk.instagram.com")
-            await update.message.reply_text(
-                f"🔒 Bu privat hisobdagi post ko‘rinmaydi.\n"
-                f"🔁 Shu linkni sinab ko‘ring:\n{new_link}"
-            )
-            return
-
-    # Public video yuklash
+# Linkni tekshirish va qayta ishlash
+def process_instagram_link(url):
     try:
-        api_url = f"https://api.sssinstagram.com/api/instagram/video?url={text}"
-        r = requests.get(api_url)
-        data = r.json()
-        if "video" in data and data["video"]:
-            await update.message.reply_video(video=data["video"][0])
+        video_data = download_instagram_video(url)
+        if video_data:
+            return {"type": "video", "data": video_data}
         else:
-            await update.message.reply_text("❌ Video topilmadi.")
-    except Exception as e:
-        await update.message.reply_text(f"⚠️ Xatolik yuz berdi: {e}")
+            modified_link = url.replace("www.instagram.com", "kkinstagram.com")
+            return {"type": "link", "data": modified_link}
+    except Exception:
+        modified_link = url.replace("www.instagram.com", "kkinstagram.com")
+        return {"type": "link", "data": modified_link}
 
-async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❓ Buyruq noma’lum. Faqat /start yoki Instagram link yuboring.")
+# Xabar handler
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    url = message.text.strip()
+    
+    result = process_instagram_link(url)
+    if result["type"] == "video":
+        await message.reply_video(result["data"])
+        # Qo'shimcha xabar
+        await message.reply_text(
+            "PUBG MOBILE uchun eng arzon UC SERVIC @ZakirShaX_Price"
+        )
+    else:
+        await message.reply_text(
+            f"*VIDEO YUKLANDI! KO'CHIRIB OLISHINGIZ MUMKIN*\nLink: {result['data']}",
+            parse_mode="Markdown",
+        )
+        # Qo'shimcha xabar
+        await message.reply_text(
+            "PUBG MOBILE uchun eng arzon UC SERVIC @ZakirShaX_Price"
+        )
 
-=======
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-
-# TOKEN .env yoki Railway Variables ichidan olinadi
-TOKEN = os.getenv("TOKEN")
-
-# --- Instagram videoni yuklab olish funksiyasi ---
-def download_instagram_video(insta_url):
-    try:
-        # Yangi, barqaror API
-        api_url = f"https://api.instavideosave.net/allinone?url={insta_url}"
-        response = requests.get(api_url, timeout=20)
-        response.raise_for_status()
-        data = response.json()
-
-        # Agar video topilgan bo‘lsa
-        if "url" in data and len(data["url"]) > 0:
-            video_url = data["url"][0]["url"]
-            return video_url
-        else:
-            return None
-
-    except Exception as e:
-        print(f"Xatolik: {e}")
-        return None
-
-
-# --- /start buyrug‘i ---
+# /start handler
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Assalomu alaykum!\n\n"
-        "📥 Menga *Instagram video link* yuboring — men sizga videoni yuklab beraman.\n\n"
-        "⚠️ Eslatma: faqat *ommaviy (public)* postlardan video yuklab olinadi.",
-        parse_mode="Markdown"
+        "Salom! Instagramdan video link yuboring! Men uni yuklab beraman!"
     )
 
-
-# --- Asosiy xabarlarni qayta ishlovchi funksiya ---
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-
-    # faqat Instagram linklarini qayta ishlaymiz
-    if "instagram.com" not in text:
-        await update.message.reply_text("⚠️ Iltimos, faqat Instagram video havolasini yuboring.")
-        return
-
-    # Privat akkauntni aniqlash
-    if "instagram.com" in text and "?" not in text:
-        # privat hisoblarda faqat linkni almashtiramiz
-        new_link = text.replace("www.instagram.com", "kk.instagram.com")
-        await update.message.reply_text(
-            f"🔒 Bu video privat hisobdan bo‘lishi mumkin.\n"
-            f"Mana sizga yangilangan link:\n{new_link}"
-        )
-        return
-
-    await update.message.reply_text("⏳ Video yuklab olinmoqda, biroz kuting...")
-
-    video_url = download_instagram_video(text)
-
-    if video_url:
-        try:
-            await update.message.reply_video(video_url)
-            await update.message.reply_text(
-                "🎯 Video muvaffaqiyatli yuklab olindi!\n\n"
-                "🔥 PUBG MOBILE uchun eng arzon UC servis — @ZakirShaX_Price"
-            )
-        except Exception as e:
-            await update.message.reply_text(f"⚠️ Xatolik yuz berdi: {e}")
-    else:
-        await update.message.reply_text(
-            "❌ Kechirasiz, videoni yuklab bo‘lmadi.\n"
-            "Bu ehtimol *xususiy (private)* hisobdagi video bo‘lishi mumkin."
-        )
-
-
-# --- Asosiy funksiya ---
->>>>>>> 7545121 (Yangilangan kod: ApplicationBuilder polling va video yuklash tuzatildi)
 def main():
-    print("🚀 Bot ishga tushdi...")
     app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_instagram))
-    app.add_handler(MessageHandler(filters.COMMAND, unknown))
+    # Handlers
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.COMMAND & filters.Regex("^/start$"), start))
 
-print("Bu yangi kod")
+    # Botni ishga tushirish
+    logger.info("🚀 Bot ishga tushdi...")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
