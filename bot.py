@@ -1,39 +1,22 @@
-# Yangi fayllarni yaratish
-echo "import telebot
+from aiogram import Bot, Dispatcher, executor, types
 from config import BOT_TOKEN
 
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(bot)
 
-def convert_link(link):
-    link = link.strip()
-    return link.replace('www.instagram.com', 'kkinstagram.com')
+@dp.message_handler(content_types=['text'])
+async def change_instagram_domain(message: types.Message):
+    text = message.text.strip()
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    start_text = 'Salom! Menga Instagramdan video linkini yuboring, men sizga yuklab beraman 👇'
-    bot.reply_to(message, start_text)
+    # faqat instagram linklarini tekshiramiz
+    if "instagram.com" in text:
+        # domenni kkinstagram.com ga almashtiramiz
+        new_link = text.replace("www.instagram.com", "kkinstagram.com")
+        new_link = new_link.replace("instagram.com", "kkinstagram.com")
 
-@bot.message_handler(func=lambda m: True)
-def handle_link(message):
-    text = message.text
-    if 'instagram.com' in text:
-        new_link = convert_link(text)
-        bot.reply_to(message, f'✅ {new_link}')
-        ad_text = 'PUBG MOBILE UCHUN ENG ARZON UC SERVICE\n💎 @ZakirShaX va @ZakirShaX_Price da'
-        bot.send_message(message.chat.id, ad_text)
+        await message.answer(f"Mana o'zgartirilgan link:\n{new_link}")
     else:
-        error_text = '❌ Iltimos, haqiqiy Instagram link yuboring.\n\nPUBG MOBILE UCHUN ENG ARZON UC SERVICE\n💎 @ZakirShaX va @ZakirShaX_Price da'
-        bot.reply_to(message, error_text)
+        await message.answer("Iltimos, Instagram videosi linkini yuboring!")
 
-print('Bot ishga tushdi ✅')
-bot.infinity_polling()" > bot.py
-
-echo "BOT_TOKEN = 'YOUR_BOT_TOKEN_HERE'" > config.py
-
-echo "pyTelegramBotAPI
-requests" > requirements.txt
-
-# GitHubga yuklash
-git add .
-git commit -m "Bot kodini qo'shdim"
-git push origin main
+if __name__ == "__main__":
+    executor.start_polling(dp)
