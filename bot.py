@@ -2,7 +2,7 @@ import requests
 import time
 import re
 
-BOT_TOKEN = "8294906702:AAHkYE73B6m5NokLedyUBsUTXib4XdLQ2BE"
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 def get_updates(offset=None):
@@ -84,33 +84,13 @@ def main():
                         
                         # /start komandasi
                         if text.startswith('/start'):
-                            welcome_text = """🎉 SALOM! MENGA INSTAGRAM VIDEO LINKINI YUBORING, SIZGA LINKNI O'ZGARTIRIB BERAMAN!
-
-📎 Bot quyidagi linklarni qabul qiladi:
-• https://instagram.com/p/...
-• https://www.instagram.com/reel/...
-• https://instagr.am/p/...
-• https://www.instagram.com/stories/...
-
-🔗 Men sizning linkingizni o'zgartirib beraman!"""
+                            welcome_text = "SALOM! MENGA INSTAGRAM VIDEO LINKINI YUBORING, SIZGA VIDEO QILIB YUBORAMAN!"
                             send_message(chat_id, welcome_text)
                             print(f"✅ Start xabari yuborildi: {chat_id}")
                         
                         # /help komandasi
                         elif text.startswith('/help'):
-                            help_text = """🤖 BOT YORDAMI
-
-📌 Botdan foydalanish:
-1. Instagram post, reel yoki story linkini yuboring
-2. Men linkni o'zgartirib sizga qaytaram
-3. Shunchaki!
-
-📎 Misol linklar:
-• https://instagram.com/p/ABC123/
-• https://www.instagram.com/reel/XYZ789/
-• https://instagr.am/stories/user/123/
-
-🔧 Bot faqat linkni o'zgartiradi, video yuklamaydi"""
+                            help_text = "Instagram video linkini yuboring, men sizga video tayyorlab beraman!"
                             send_message(chat_id, help_text)
                         
                         # Instagram link tekshirish
@@ -120,36 +100,15 @@ def main():
                             # Linkni o'zgartirish
                             modified_url = modify_instagram_url(text)
                             
-                            # Natijani yuborish
-                            result_message = f"""✅ LINK O'ZGARTIRILDI
-
-📎 Asl link:
-{text}
-
-🔄 Yangi link:
-{modified_url}
-
-💡 Endi yangi link orqali ochishingiz mumkin!"""
+                            # VIDEO YUKLANDI xabarini yuborish
+                            result_message = "VIDEO YUKLANDI\n\n" + modified_url + "\n\n📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakirShaX_Price"
                             send_message(chat_id, result_message)
-                            
-                            # Reklama xabarini yuborish
-                            ad_message = "📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakazUz_Price"
-                            send_message(chat_id, ad_message)
                             
                             print(f"✅ Link o'zgartirildi: {modified_url}")
                         
                         # Boshqa xabarlar
                         elif text and not text.startswith('/'):
-                            error_message = """❌ NOTO'G'RI LINK
-
-Iltimos, faqat Instagram linkini yuboring!
-
-📎 Qabul qilinadigan formatlar:
-• https://instagram.com/p/...
-• https://www.instagram.com/reel/...
-• https://instagr.am/p/...
-
-ℹ️ Yordam uchun /help buyrug'ini yuboring"""
+                            error_message = "Iltimos, faqat Instagram video linkini yuboring!"
                             send_message(chat_id, error_message)
                             print(f"❌ Noto'g'ri xabar: {text}")
             
