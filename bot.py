@@ -1,65 +1,83 @@
 import os
 import requests
-import telebot
-from urllib.parse import urlparse
 import json
+from urllib.parse import urlparse
 
-# Bot tokenini qo'ying
-BOT_TOKEN = "8294906702:AAHkYE73B6m5NokLedyUBsUTXib4XdLQ2BE"
-bot = telebot.TeleBot(BOT_TOKEN)
+# Telegram Bot API dan to'g'ridan-to'g'ri foydalanish
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# Start komandasi
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    welcome_text = "SALOM! MENGA INSTAGRAM VIDEO LINKINI YUBORING, SIZGA VIDEO QILIB YUBORAMAN!"
-    bot.reply_to(message, welcome_text)
+def send_message(chat_id, text):
+    url = f"{BASE_URL}/sendMessage"
+    data = {"chat_id": chat_id, "text": text}
+    requests.post(url, data=data)
 
-# Instagram linklarini qayta ishlash
-@bot.message_handler(func=lambda message: True)
-def handle_instagram_links(message):
-    if "instagram.com" in message.text or "kkinstagram.com" in message.text:
-        try:
-            bot.send_message(message.chat.id, "📥 Video yuklanmoqda...")
-            
-            # Domen nomini o'zgartirish
-            modified_url = message.text.replace("www.instagram.com", "kkinstagram.com")
-            
-            # Video yuklab olish (bu yerda API yoki kutubxona ishlatishingiz kerak)
-            video_info = download_instagram_video(modified_url)
-            
-            if video_info and 'video_url' in video_info:
-                # Videoni yuborish
-                bot.send_video(message.chat.id, video_info['video_url'], caption="🎥 Sizning video")
+def send_video(chat_id, video_url, caption=""):
+    url = f"{BASE_URL}/sendVideo"
+    data = {"chat_id": chat_id, "video": video_url, "caption": caption}
+    requests.post(url, data=data)
+
+def get_updates(offset=None):
+    url = f"{BASE_URL}/getUpdates"
+    params = {"offset": offset, "timeout": 30}
+    response = requests.get(url, params=params)
+    return response.json()
+
+def handle_updates():
+    last_update_id = None
+    
+    while True:
+        updates = get_updates(last_update_id)
+        
+        if "result" in updates:
+            for update in updates["result"]:
+                last_update_id = update["update_id"] + 1
                 
-                # Qo'shimcha xabar
-                pubg_text = "📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakirShaX_Price"
-                bot.send_message(message.chat.id, pubg_text)
-            else:
-                bot.send_message(message.chat.id, "❌ Video yuklab olishda xatolik yuz berdi")
-                
-        except Exception as e:
-            bot.send_message(message.chat.id, f"❌ Xatolik: {str(e)}")
-    else:
-        bot.send_message(message.chat.id, "Iltimos, faqat Instagram video linkini yuboring!")
+                if "message" in update:
+                    message = update["message"]
+                    chat_id = message["chat"]["id"]
+                    text = message.get("text", "")
+                    
+                    # Start komandasi
+                    if text.startswith('/start'):
+                        send_message(chat_id, "SALOM! MENGA INSTAGRAM VIDEO LINKINI YUBORING, SIZGA VIDEO QILIB YUBORAMAN!")
+                    
+                    # Instagram linklarini tekshirish
+                    elif "instagram.com" in text or "kkinstagram.com" in text:
+                        send_message(chat_id, "📥 Video yuklanmoqda...")
+                        
+                        try:
+                            # Domen nomini o'zgartirish
+                            modified_url = text.replace("www.instagram.com", "kkinstagram.com")
+                            
+                            # Video yuklab olish (sizning logikangiz)
+                            video_url = download_instagram_video(modified_url)
+                            
+                            if video_url:
+                                send_video(chat_id, video_url, "🎥 Sizning video")
+                                send_message(chat_id, "📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakirShaX_Price")
+                            else:
+                                send_message(chat_id, "❌ Video yuklab olishda xatolik yuz berdi")
+                                
+                        except Exception as e:
+                            send_message(chat_id, f"❌ Xatolik: {str(e)}")
+                    
+                    else:
+                        send_message(chat_id, "Iltimos, faqat Instagram video linkini yuboring!")
 
 def download_instagram_video(url):
     """
     Instagram videoni yuklab olish funksiyasi
-    Note: Bu funksiyani to'ldirishingiz kerak
+    Bu yerda siz o'zingizning yuklab olish logikangizni qo'shing
     """
     try:
-        # Bu yerda haqiqiy Instagram video yuklab olish logikasi
-        # Siz quyidagi usullardan birini ishlatishingiz mumkin:
+        # DEMO: Haqiqiy yuklab olish logikasi o'rniga demo URL
+        # Haqiqiy loyiha uchun instaloader yoki API ishlating
         
-        # 1. Instagram API orqali
-        # 2. Instaloader kutubxonasi
-        # 3. Boshqa third-party API lar
+        # Misol demo video
+        demo_video_url = "https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4"
         
-        # Misol: instagram-private-api yoki instaloader ishlatish
-        # return {'video_url': 'haqiqiy_video_url'}
-        
-        # Hozircha demo uchun
-        return None
+        return demo_video_url
         
     except Exception as e:
         print(f"Download error: {e}")
@@ -67,4 +85,4 @@ def download_instagram_video(url):
 
 if __name__ == "__main__":
     print("Bot ishga tushdi...")
-    bot.polling()
+    handle_updates()
