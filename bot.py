@@ -6,7 +6,7 @@ dp = Dispatcher(bot)
 
 @dp.message_handler(commands=['start'])
 async def start(msg: types.Message):
-    await msg.answer("MENGA *INSTAGRAM VIDEO LINKINI* YUBORING, SIZGA VIDEO QILIB YUBORAMAN!")
+    await msg.answer("Instagram link yuboring!")
 
 @dp.message_handler()
 async def handle(msg: types.Message):
@@ -17,7 +17,7 @@ async def handle(msg: types.Message):
         new_link = text.replace("www.instagram.com", "kkinstagram.com")
         new_link = new_link.replace("instagram.com", "kkinstagram.com")
 
-        await msg.answer("VIDEO TAYYOR YUKLAB OLISHINGIZ MUMKIN! 👇")
+        await msg.answer("VIDEO JOYLANDI YUKLAB OLING👇")
         await msg.answer(new_link)
     else:
         await msg.answer("Iltimos faqat Instagram link yuboring!")
