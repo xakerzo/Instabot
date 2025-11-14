@@ -1,8 +1,8 @@
 import requests
 import time
-import json
+import re
 
-BOT_TOKEN = "8294906702:AAHkYE73B6m5NokLedyUBsUTXib4XdLQ2BE"  # @BotFather dan olingan tokenni qo'ying
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 def get_updates(offset=None):
@@ -26,37 +26,49 @@ def send_message(chat_id, text):
     except Exception as e:
         print(f"Xatolik xabar yuborishda: {e}")
 
-def send_video(chat_id, video_url, caption=""):
-    """Video yuborish"""
-    try:
-        url = f"{BASE_URL}/sendVideo"
-        data = {"chat_id": chat_id, "video": video_url, "caption": caption}
-        response = requests.post(url, data=data)
-        return response.json()
-    except Exception as e:
-        print(f"Xatolik video yuborishda: {e}")
+def is_instagram_url(url):
+    """Instagram linki ekanligini tekshirish"""
+    instagram_patterns = [
+        r'https?://(www\.)?instagram\.com/\S+',
+        r'https?://(www\.)?instagr\.am/\S+',
+        r'https?://(www\.)?kkinstagram\.com/\S+'
+    ]
+    
+    for pattern in instagram_patterns:
+        if re.match(pattern, url):
+            return True
+    return False
 
-def download_instagram_video(url):
-    """
-    Instagram video yuklab olish (DEMO)
-    Haqiqiy loyiha uchun instaloader yoki API ishlating
-    """
+def modify_instagram_url(original_url):
+    """Instagram URL ni o'zgartirish"""
     try:
-        # DEMO: Haqiqiy yuklab olish o'rniga test video
-        # Bu yerda o'zingizning yuklab olish logikangizni qo'shing
-        demo_video = "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
-        return demo_video
+        modified_url = original_url
+        
+        # Barcha Instagram domainlarini o'zgartirish
+        replacements = [
+            ("www.instagram.com", "kkinstagram.com"),
+            ("instagram.com", "kkinstagram.com"),
+            ("instagr.am", "kkinstagram.com"),
+            ("www.instagr.am", "kkinstagram.com"),
+        ]
+        
+        for old_domain, new_domain in replacements:
+            if old_domain in modified_url:
+                modified_url = modified_url.replace(old_domain, new_domain)
+                break
+        
+        return modified_url
+        
     except Exception as e:
-        print(f"Yuklab olish xatosi: {e}")
-        return None
+        print(f"URL o'zgartirish xatosi: {e}")
+        return original_url
 
 def main():
-    print("🤖 Bot ishga tushdi...")
+    print("🤖 Instagram Link Converter Bot ishga tushdi...")
     last_update_id = None
     
     while True:
         try:
-            # Yangiliklarni olish
             updates = get_updates(last_update_id)
             
             if "result" in updates and updates["result"]:
@@ -66,48 +78,85 @@ def main():
                     if "message" in update:
                         message = update["message"]
                         chat_id = message["chat"]["id"]
-                        text = message.get("text", "")
+                        text = message.get("text", "").strip()
                         
-                        print(f"📨 Yangi xabar: {text}")
+                        print(f"📨 Yangi xabar: {chat_id} - {text}")
                         
                         # /start komandasi
                         if text.startswith('/start'):
-                            welcome_text = "SALOM! MENGA INSTAGRAM VIDEO LINKINI YUBORING, SIZGA VIDEO QILIB YUBORAMAN!"
+                            welcome_text = """🎉 SALOM! MENGA INSTAGRAM VIDEO LINKINI YUBORING, SIZGA LINKNI O'ZGARTIRIB BERAMAN!
+
+📎 Bot quyidagi linklarni qabul qiladi:
+• https://instagram.com/p/...
+• https://www.instagram.com/reel/...
+• https://instagr.am/p/...
+• https://www.instagram.com/stories/...
+
+🔗 Men sizning linkingizni o'zgartirib beraman!"""
                             send_message(chat_id, welcome_text)
                             print(f"✅ Start xabari yuborildi: {chat_id}")
                         
+                        # /help komandasi
+                        elif text.startswith('/help'):
+                            help_text = """🤖 BOT YORDAMI
+
+📌 Botdan foydalanish:
+1. Instagram post, reel yoki story linkini yuboring
+2. Men linkni o'zgartirib sizga qaytaram
+3. Shunchaki!
+
+📎 Misol linklar:
+• https://instagram.com/p/ABC123/
+• https://www.instagram.com/reel/XYZ789/
+• https://instagr.am/stories/user/123/
+
+🔧 Bot faqat linkni o'zgartiradi, video yuklamaydi"""
+                            send_message(chat_id, help_text)
+                        
                         # Instagram link tekshirish
-                        elif "instagram.com" in text.lower():
+                        elif is_instagram_url(text):
                             print(f"📥 Instagram link topildi: {text}")
-                            send_message(chat_id, "📥 Video yuklanmoqda...")
                             
-                            # Domen nomini o'zgartirish
-                            modified_url = text.replace("www.instagram.com", "kkinstagram.com")
-                            modified_url = modified_url.replace("instagram.com", "kkinstagram.com")
+                            # Linkni o'zgartirish
+                            modified_url = modify_instagram_url(text)
                             
-                            print(f"🔗 O'zgartirilgan URL: {modified_url}")
+                            # Natijani yuborish
+                            result_message = f"""✅ LINK O'ZGARTIRILDI
+
+📎 Asl link:
+{text}
+
+🔄 Yangi link:
+{modified_url}
+
+💡 Endi yangi link orqali ochishingiz mumkin!"""
+                            send_message(chat_id, result_message)
                             
-                            # Video yuklab olish
-                            video_url = download_instagram_video(modified_url)
+                            # Reklama xabarini yuborish
+                            ad_message = "📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakazUz_Price"
+                            send_message(chat_id, ad_message)
                             
-                            if video_url:
-                                send_video(chat_id, video_url, "🎥 Sizning video")
-                                send_message(chat_id, "📢 PUBG MOBILE uchun eng arzon UC‑servis: @ZakazUz_Price")
-                                print(f"✅ Video yuborildi: {chat_id}")
-                            else:
-                                send_message(chat_id, "❌ Video yuklab olishda xatolik yuz berdi")
-                                print(f"❌ Video yuklab olish xatosi: {chat_id}")
+                            print(f"✅ Link o'zgartirildi: {modified_url}")
                         
                         # Boshqa xabarlar
-                        elif text:
-                            send_message(chat_id, "Iltimos, faqat Instagram video linkini yuboring!")
+                        elif text and not text.startswith('/'):
+                            error_message = """❌ NOTO'G'RI LINK
+
+Iltimos, faqat Instagram linkini yuboring!
+
+📎 Qabul qilinadigan formatlar:
+• https://instagram.com/p/...
+• https://www.instagram.com/reel/...
+• https://instagr.am/p/...
+
+ℹ️ Yordam uchun /help buyrug'ini yuboring"""
+                            send_message(chat_id, error_message)
                             print(f"❌ Noto'g'ri xabar: {text}")
             
-            # Kichik tanaffus
             time.sleep(1)
             
         except Exception as e:
-            print(f"❌ Asosiy tsikl xatosi: {e}")
+            print(f"❌ Xatolik: {e}")
             time.sleep(5)
 
 if __name__ == "__main__":
