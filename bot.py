@@ -1,26 +1,38 @@
-from aiogram import Bot, Dispatcher, executor, types
+import telebot
 from config import BOT_TOKEN
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+bot = telebot.TeleBot(BOT_TOKEN)
 
-@dp.message_handler(commands=['start'])
-async def start(msg: types.Message):
-    await msg.answer("Instagram link yuboring!")
+def convert_link(link):
+    link = link.strip()
+    # www.instagram.com ni kkinstagram.com ga o'zgartiradi
+    return link.replace("www.instagram.com", "kkinstagram.com")
 
-@dp.message_handler()
-async def handle(msg: types.Message):
-    text = msg.text.strip()
+@bot.message_handler(commands=["start"])
+def send_welcome(message):
+    start_text = """Salom! Menga Instagramdan video linkini yuboring, men sizga yuklab beraman 👇"""
+    bot.reply_to(message, start_text)
 
+@bot.message_handler(func=lambda m: True)
+def handle_link(message):
+    text = message.text
     if "instagram.com" in text:
-        # domenni almashtiramiz
-        new_link = text.replace("www.instagram.com", "kkinstagram.com")
-        new_link = new_link.replace("instagram.com", "kkinstagram.com")
+        new_link = convert_link(text)
+        
+        # PUBG UC service reklamasi bilan javob
+        response_text = f"""PUBG MOBILE UCHUN ENG ARZON UC SERVICE
+💎 @ZakirShaX va @ZakirShaX_Price da
 
-        await msg.answer("Mana o‘zgartirilgan link👇")
-        await msg.answer(new_link)
+✅ Link tayyor: {new_link}"""
+        
+        bot.reply_to(message, response_text)
     else:
-        await msg.answer("Iltimos faqat Instagram link yuboring!")
+        error_text = """❌ Iltimos, haqiqiy Instagram link yuboring.
 
-if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+PUBG MOBILE UCHUN ENG ARZON UC SERVICE
+💎 @ZakirShaX va @ZakirShaX_Price da"""
+        
+        bot.reply_to(message, error_text)
+
+print("Bot ishga tushdi ✅")
+bot.infinity_polling()
