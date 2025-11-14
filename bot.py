@@ -17,7 +17,7 @@ async def handle(msg: types.Message):
         new_link = text.replace("www.instagram.com", "kkinstagram.com")
         new_link = new_link.replace("instagram.com", "kkinstagram.com")
 
-        await msg.answer("VIDEO JOYLANDI YUKLAB OLING👇")
+        await msg.answer("Mana o‘zgartirilgan link👇")
         await msg.answer(new_link)
     else:
         await msg.answer("Iltimos faqat Instagram link yuboring!")
