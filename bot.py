@@ -211,8 +211,6 @@ async def handle_owner_buttons(update: Update, context: ContextTypes.DEFAULT_TYP
     elif data == "user_count":
         count = len(get_users())
         await context.bot.send_message(user_id, f"Botdagi foydalanuvchilar soni: {count}")
-    
-    # ---------- Owner start matni boshqaruvi ----------
     elif data == "start_add":
         set_state("start_add")
         await context.bot.send_message(user_id, "Iltimos, foydalanuvchilarga ko'rsatadigan start matnini yuboring:")
@@ -222,7 +220,6 @@ async def handle_owner_buttons(update: Update, context: ContextTypes.DEFAULT_TYP
     elif data == "start_delete":
         delete_owner_message()
         await context.bot.send_message(user_id, "Start matni o'chirildi ✅")
-
     elif data == "confirm_subscription":
         if await check_subscription(user_id, context):
             mark_subscribed(user_id)
@@ -232,7 +229,7 @@ async def handle_owner_buttons(update: Update, context: ContextTypes.DEFAULT_TYP
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.chat.id
     add_user(user_id)
-    
+
     if user_id == OWNER_ID:
         buttons = [
             [InlineKeyboardButton("📢 Broadcast", callback_data="broadcast")],
@@ -263,13 +260,49 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     add_user(chat_id)
 
-    # ---------- Owner start matni saqlash uchun state tekshirish ----------
-    if get_state() == "start_add" and chat_id == OWNER_ID:
-        set_owner_message(text)
-        clear_state()
-        await context.bot.send_message(chat_id, "✅ Start matni saqlandi!")
-        return
+    state = get_state()
 
+    # ---------- Owner funktsiyalari ----------
+    if chat_id == OWNER_ID:
+        # Start matnini saqlash
+        if state == "start_add":
+            set_owner_message(text)
+            clear_state()
+            await context.bot.send_message(chat_id, "✅ Start matni saqlandi!")
+            return
+        # Broadcast
+        elif state == "broadcast":
+            clear_state()
+            users = get_users()
+            count = 0
+            for user in users:
+                try:
+                    await context.bot.send_message(user, text)
+                    count += 1
+                except:
+                    continue
+            await context.bot.send_message(chat_id, f"✅ Broadcast yuborildi {count} foydalanuvchiga!")
+            return
+        # Caption qo'shish
+        elif state == "caption":
+            set_caption(text)
+            clear_state()
+            await context.bot.send_message(chat_id, "✅ Caption saqlandi!")
+            return
+        # Kanal qo‘shish
+        elif state == "channel_add":
+            add_channel(text)
+            clear_state()
+            await context.bot.send_message(chat_id, f"✅ Kanal qo‘shildi: {text}")
+            return
+        # Kanal o‘chirish
+        elif state == "channel_delete":
+            delete_channel(text)
+            clear_state()
+            await context.bot.send_message(chat_id, f"✅ Kanal o‘chirildi: {text}")
+            return
+
+    # ---------- Foydalanuvchi uchun obuna tekshiruvi ----------
     if not await check_subscription(chat_id, context):
         return
 
