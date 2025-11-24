@@ -1,3 +1,3 @@
 requests
-instaloader
-pyTelegramBotAPI
+python-telegram-bot==20.5
+pyTelegramBotAPI==4.12.0
