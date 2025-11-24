@@ -123,7 +123,7 @@ async def check_subscription(user_id, app):
     buttons = [[InlineKeyboardButton(ch, url=f"https://t.me/{ch.replace('@','')}")] for ch in channels]
     buttons.append([InlineKeyboardButton("✅ Tasdiqladim", callback_data="confirm_subscription")])
     reply_markup = InlineKeyboardMarkup(buttons)
-    await app.bot.send_message(user_id, "❌ Siz hali barcha kanallarga obuna bo‘lmadingiz! Iltimos, obuna bo‘lib qayta tasdiqlang:", reply_markup=reply_markup)
+    await app.bot.send_message(user_id, "❌ Siz hali barcha majburiy kanallarga obuna bo‘lmadingiz! Iltimos, obuna bo‘lib qayta tasdiqlang:", reply_markup=reply_markup)
     return False
 
 # ---------- Instagram link funksiyalari ----------
@@ -246,13 +246,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(buttons)
         await context.bot.send_message(user_id, "👋 Salom Owner!\nBu sizning maxsus boshqaruv panelingiz:", reply_markup=reply_markup)
-    else:
-        owner_msg = get_owner_message()
-        if owner_msg:
-            text = owner_msg
-        else:
-            text = "👋 Salom! \n\n✅ Instagram downloader\n✅ TikTok downloader\n✅ Pinterest downloader\n\n📌 Iltimos, birinchi navbatda link yuboring!"
-        await context.bot.send_message(user_id, text)
+        return
+
+    # Foydalanuvchi uchun kanalga obuna tekshiruvi
+    if not await check_subscription(user_id, context):
+        return
+
+    # Start matni yoki default xabar
+    owner_msg = get_owner_message()
+    text = owner_msg if owner_msg else "👋 Salom! \n\n✅ Instagram downloader\n✅ TikTok downloader\n✅ Pinterest downloader\n\n📌 Iltimos, birinchi navbatda link yuboring!"
+    await context.bot.send_message(user_id, text)
 
 # ---------- Xabarlarni qayta ishlash ----------
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
