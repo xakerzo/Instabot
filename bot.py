@@ -86,6 +86,20 @@ def is_subscribed(user_id):
     cursor.execute("SELECT user_id FROM subscribed_users WHERE user_id=?", (user_id,))
     return cursor.fetchone() is not None
 
+# ---------- Owner start xabarini saqlash/olish/o'chirish ----------
+def set_owner_message(text):
+    cursor.execute("REPLACE INTO settings (key,value) VALUES ('owner_message',?)", (text,))
+    conn.commit()
+
+def get_owner_message():
+    cursor.execute("SELECT value FROM settings WHERE key='owner_message'")
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+def delete_owner_message():
+    cursor.execute("DELETE FROM settings WHERE key='owner_message'")
+    conn.commit()
+
 # ---------- Majburiy kanal tekshiruvi ----------
 async def check_subscription(user_id, app):
     channels = get_channels()
@@ -106,7 +120,6 @@ async def check_subscription(user_id, app):
         mark_subscribed(user_id)
         return True
 
-    # Obuna bo'lmagan foydalanuvchiga tugmalar
     buttons = [[InlineKeyboardButton(ch, url=f"https://t.me/{ch.replace('@','')}")] for ch in channels]
     buttons.append([InlineKeyboardButton("✅ Tasdiqladim", callback_data="confirm_subscription")])
     reply_markup = InlineKeyboardMarkup(buttons)
@@ -170,6 +183,7 @@ async def handle_owner_buttons(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = query.from_user.id
     data = query.data
     await query.answer()
+
     if data == "broadcast":
         set_state("broadcast")
         await context.bot.send_message(user_id, "Matn yuboring (bu barcha foydalanuvchilarga jo'natiladi):")
@@ -197,6 +211,18 @@ async def handle_owner_buttons(update: Update, context: ContextTypes.DEFAULT_TYP
     elif data == "user_count":
         count = len(get_users())
         await context.bot.send_message(user_id, f"Botdagi foydalanuvchilar soni: {count}")
+    
+    # ---------- Owner start matni boshqaruvi ----------
+    elif data == "start_add":
+        set_state("start_add")
+        await context.bot.send_message(user_id, "Iltimos, foydalanuvchilarga ko'rsatadigan start matnini yuboring:")
+    elif data == "start_view":
+        msg = get_owner_message()
+        await context.bot.send_message(user_id, msg if msg else "Hozircha start matni yo'q.")
+    elif data == "start_delete":
+        delete_owner_message()
+        await context.bot.send_message(user_id, "Start matni o'chirildi ✅")
+
     elif data == "confirm_subscription":
         if await check_subscription(user_id, context):
             mark_subscribed(user_id)
@@ -206,14 +232,43 @@ async def handle_owner_buttons(update: Update, context: ContextTypes.DEFAULT_TYP
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.chat.id
     add_user(user_id)
-    text = "👋 Salom! \n\n✅ Instagram downloader\n✅ TikTok downloader\n✅ Pinterest downloader\n\n📌 Iltimos, birinchi navbatda link yuboring!"
-    await context.bot.send_message(user_id, text)
+    
+    if user_id == OWNER_ID:
+        buttons = [
+            [InlineKeyboardButton("📢 Broadcast", callback_data="broadcast")],
+            [InlineKeyboardButton("✏️ Caption qo'shish", callback_data="caption_add")],
+            [InlineKeyboardButton("📝 Captionni ko'rish", callback_data="caption_view")],
+            [InlineKeyboardButton("❌ Captionni o'chirish", callback_data="caption_delete")],
+            [InlineKeyboardButton("➕ Kanal qo'shish", callback_data="channel_add")],
+            [InlineKeyboardButton("➖ Kanal o'chirish", callback_data="channel_delete")],
+            [InlineKeyboardButton("📃 Kanallarni tekshirish", callback_data="channel_check")],
+            [InlineKeyboardButton("👥 Foydalanuvchilar soni", callback_data="user_count")],
+            [InlineKeyboardButton("📝 Start matnini qo'shish", callback_data="start_add")],
+            [InlineKeyboardButton("👁 Start matnini ko'rish", callback_data="start_view")],
+            [InlineKeyboardButton("❌ Start matnini o'chirish", callback_data="start_delete")]
+        ]
+        reply_markup = InlineKeyboardMarkup(buttons)
+        await context.bot.send_message(user_id, "👋 Salom Owner!\nBu sizning maxsus boshqaruv panelingiz:", reply_markup=reply_markup)
+    else:
+        owner_msg = get_owner_message()
+        if owner_msg:
+            text = owner_msg
+        else:
+            text = "👋 Salom! \n\n✅ Instagram downloader\n✅ TikTok downloader\n✅ Pinterest downloader\n\n📌 Iltimos, birinchi navbatda link yuboring!"
+        await context.bot.send_message(user_id, text)
 
 # ---------- Xabarlarni qayta ishlash ----------
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat.id
     text = update.message.text.strip()
     add_user(chat_id)
+
+    # ---------- Owner start matni saqlash uchun state tekshirish ----------
+    if get_state() == "start_add" and chat_id == OWNER_ID:
+        set_owner_message(text)
+        clear_state()
+        await context.bot.send_message(chat_id, "✅ Start matni saqlandi!")
+        return
 
     if not await check_subscription(chat_id, context):
         return
