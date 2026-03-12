@@ -402,10 +402,10 @@ print(f"Bot username: @{BOT_USERNAME}")
 while True:
     try:
         bot.remove_webhook()
-        time.sleep(2)
+        time.sleep(3)  # Telegram'ga eski session'ni yopish uchun vaqt
         bot.infinity_polling(
-            timeout=10,
-            long_polling_timeout=5,
+            timeout=20,
+            long_polling_timeout=25,
             allowed_updates=None,
             restart_on_change=False,
         )
@@ -413,7 +413,12 @@ while True:
         err = str(e)
         print("Bot xato:", err)
         if "409" in err or "Conflict" in err:
-            print("409 Conflict: 5 soniya kutib qayta uriniladi...")
-            time.sleep(5)
+            # Telegram long poll timeout 30s — shuning uchun 35s kutamiz
+            print("409 Conflict: eski instance to'xtaguncha 35 soniya kutiladi...")
+            try:
+                bot.stop_polling()
+            except:
+                pass
+            time.sleep(35)
         else:
             time.sleep(3)
