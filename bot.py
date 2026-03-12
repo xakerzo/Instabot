@@ -3,8 +3,6 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 import yt_dlp
 import os
 import re
-import glob
-import instaloader
 from database import Database
 from dotenv import load_dotenv
 
@@ -188,36 +186,28 @@ def process_broadcast(message):
 # --- YUKLAB OLISH (DOWNLOADER) QISMI ---
 
 def download_instagram(url):
-    """Instagram Reels/Post videosini instaloader bilan yuklab oladi.
+    """Instagram Reels/Post videosini yt-dlp bilan yuklab oladi.
     (file_path, caption) tuple qaytaradi."""
-    # URL dan shortcode ajratib olamiz
-    match = re.search(r"instagram\.com/(?:reel|p|tv)/([\w-]+)", url)
-    if not match:
-        raise ValueError("Instagram URL noto'g'ri yoki qo'llab-quvvatlanmaydi.")
-    shortcode = match.group(1)
-
-    L = instaloader.Instaloader(
-        download_pictures=False,
-        download_video_thumbnails=False,
-        download_geotags=False,
-        download_comments=False,
-        save_metadata=False,
-        post_metadata_txt_pattern="",
-        filename_pattern="{shortcode}",
-        dirname_pattern=DOWNLOAD_FOLDER,
-        quiet=True,
-    )
-
-    post = instaloader.Post.from_shortcode(L.context, shortcode)
-    caption = post.caption or ""
-    L.download_post(post, target=DOWNLOAD_FOLDER)
-
-    # Yuklab olingan mp4 faylni topamiz
-    pattern = os.path.join(DOWNLOAD_FOLDER, f"{shortcode}*.mp4")
-    files = glob.glob(pattern)
-    if not files:
-        raise FileNotFoundError("Video fayl topilmadi.")
-    return files[0], caption
+    ydl_opts = {
+        "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "quiet": True,
+        "no_warnings": True,
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                          "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                          "Version/17.0 Mobile/15E148 Safari/604.1",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        "extractor_args": {
+            "instagram": {"app_id": "936619743392459"}
+        },
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        file_path = ydl.prepare_filename(info)
+        caption = info.get("description") or info.get("title") or ""
+    return file_path, caption
 
 
 def download_video(url):
@@ -226,6 +216,7 @@ def download_video(url):
         "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
         "format": "best",
         "quiet": True,
+        "no_warnings": True,
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                           "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -236,6 +227,7 @@ def download_video(url):
         info = ydl.extract_info(url, download=True)
         file_path = ydl.prepare_filename(info)
     return file_path
+
 
 
 @bot.message_handler(func=lambda m: True)
