@@ -1,9 +1,12 @@
 import sqlite3
 import threading
+import os
+
+DB_PATH = os.getenv("DB_PATH", "bot.db")  # Persistent disk yo'li ENV dan olinadi
 
 class Database:
-    def __init__(self, db_file="bot.db"):
-        self.db_file = db_file
+    def __init__(self, db_file=None):
+        self.db_file = db_file or DB_PATH
         self._local = threading.local()
         self._init_conn()
         self.create_tables()
