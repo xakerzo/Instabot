@@ -29,6 +29,11 @@ class Database:
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             ('start_text', '📥 Downloader Bot\n\nPlatformalar:\n📸 Instagram\n🎵 TikTok\n📌 Pinterest\n🎬 YouTube Shorts\n\nLink yuboring.')
         )
+        # Extra caption uchun default bo'sh qiymat
+        self._execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            ('extra_caption', '')
+        )
 
     def add_user(self, user_id):
         self._execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
@@ -58,3 +63,13 @@ class Database:
         cursor = self._execute("SELECT value FROM settings WHERE key='start_text'")
         row = cursor.fetchone()
         return row[0] if row else "Xush kelibsiz!"
+
+    def set_extra_caption(self, text):
+        """Video captioniga qo'shimcha matnni saqlaydi."""
+        self._execute("REPLACE INTO settings (key, value) VALUES ('extra_caption', ?)", (text,))
+
+    def get_extra_caption(self):
+        """Video captioniga qo'shimcha matnni oladi."""
+        cursor = self._execute("SELECT value FROM settings WHERE key='extra_caption'")
+        row = cursor.fetchone()
+        return row[0] if row else ""

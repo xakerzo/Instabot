@@ -58,13 +58,13 @@ def check_join_callback(call):
         bot.send_message(call.message.chat.id, "✅ <b>Obuna tasdiqlandi! Endi menga video linkini yuborishingiz mumkin.</b>", parse_mode="HTML")
 
 # --- ADMIN PANEL TUGMALARI ---
-ADMIN_BUTTONS = ["📊 Statistika", "📢 Broadcast", "➕ Kanal qo'shish", "➖ Kanalni o'chirish", "📝 Start matnini o'zgartirish"]
+ADMIN_BUTTONS = ["📊 Statistika", "📢 Broadcast", "➕ Kanal qo'shish", "➖ Kanalni o'chirish", "📝 Start matnini o'zgartirish", "🖊 Caption matni"]
 
 def admin_keyboard():
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(KeyboardButton(ADMIN_BUTTONS[0]), KeyboardButton(ADMIN_BUTTONS[1]))
     markup.add(KeyboardButton(ADMIN_BUTTONS[2]), KeyboardButton(ADMIN_BUTTONS[3]))
-    markup.add(KeyboardButton(ADMIN_BUTTONS[4]))
+    markup.add(KeyboardButton(ADMIN_BUTTONS[4]), KeyboardButton(ADMIN_BUTTONS[5]))
     return markup
 
 
@@ -139,7 +139,29 @@ def start_text_step(message):
 def process_start_text(message):
     if message.text in ADMIN_BUTTONS: return
     db.set_start_text(message.text)
-    bot.reply_to(message, "✅ Start matni almashtirildi!")
+    bot.reply_to(message, "✅ Start matni almashtirildi!", reply_markup=admin_keyboard())
+
+@bot.message_handler(func=lambda m: m.text == "🖊 Caption matni" and m.chat.id in ADMIN_IDS)
+def caption_extra_step(message):
+    current = db.get_extra_caption()
+    current_show = f"<b><i>{current}</i></b>" if current else "<i>(bo'sh)</i>"
+    msg = bot.reply_to(
+        message,
+        f"Hozirgi qo'shimcha caption:\n{current_show}\n\n"
+        "📝 Yangi matnni yuboring (barcha videolarga <b>qalin egri</b> formatda qo'shiladi).\n"
+        "O'chirish uchun <code>-</code> yuboring:",
+        parse_mode="HTML"
+    )
+    bot.register_next_step_handler(msg, process_caption_extra)
+
+def process_caption_extra(message):
+    if message.text in ADMIN_BUTTONS: return
+    text = "" if message.text.strip() == "-" else message.text.strip()
+    db.set_extra_caption(text)
+    if text:
+        bot.reply_to(message, f"✅ Qo'shimcha caption saqlandi:\n<b><i>{text}</i></b>", parse_mode="HTML", reply_markup=admin_keyboard())
+    else:
+        bot.reply_to(message, "✅ Qo'shimcha caption o'chirildi.", reply_markup=admin_keyboard())
 
 @bot.message_handler(func=lambda m: m.text == "📢 Broadcast" and m.chat.id in ADMIN_IDS)
 def broadcast_step(message):
@@ -249,13 +271,27 @@ def downloader(message):
             file_path = download_video(url)
 
         with open(file_path, "rb") as video:
-            # Caption 1024 belgidan uzun bo'lsa qisqartiramiz (Telegram cheklov)
-            tg_caption = caption[:1024] if caption else None
-            bot.send_video(message.chat.id, video, caption=tg_caption)
+            # Instagram caption + admin qo'shgan extra caption birlashtiramiz
+            extra = db.get_extra_caption()
+            parts = []
+            if caption:
+                parts.append(caption)
+            if extra:
+                parts.append(f"<b><i>{extra}</i></b>")
+            full_caption = "\n\n".join(parts) if parts else None
+            # Telegram caption max 1024 belgi (HTML teglarsiz), ehtiyot uchun qisqartiramiz
+            if full_caption and len(full_caption) > 1024:
+                full_caption = full_caption[:1020] + "..."
+            bot.send_video(
+                message.chat.id, video,
+                caption=full_caption,
+                parse_mode="HTML" if full_caption else None
+            )
 
         # Faylni o'chirib tashlaymiz
         os.remove(file_path)
         bot.delete_message(message.chat.id, msg.message_id)
+
 
     except Exception as e:
         err_msg = str(e)
