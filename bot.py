@@ -166,7 +166,8 @@ def process_broadcast(message):
 # --- YUKLAB OLISH (DOWNLOADER) QISMI ---
 
 def download_instagram(url):
-    """Instagram Reels/Post videosini instaloader bilan yuklab oladi."""
+    """Instagram Reels/Post videosini instaloader bilan yuklab oladi.
+    (file_path, caption) tuple qaytaradi."""
     # URL dan shortcode ajratib olamiz
     match = re.search(r"instagram\.com/(?:reel|p|tv)/([\w-]+)", url)
     if not match:
@@ -186,6 +187,7 @@ def download_instagram(url):
     )
 
     post = instaloader.Post.from_shortcode(L.context, shortcode)
+    caption = post.caption or ""
     L.download_post(post, target=DOWNLOAD_FOLDER)
 
     # Yuklab olingan mp4 faylni topamiz
@@ -193,7 +195,7 @@ def download_instagram(url):
     files = glob.glob(pattern)
     if not files:
         raise FileNotFoundError("Video fayl topilmadi.")
-    return files[0]
+    return files[0], caption
 
 
 def download_video(url):
@@ -240,13 +242,16 @@ def downloader(message):
 
     try:
         # Instagram uchun maxsus yuklovchi
+        caption = None
         if "instagram.com" in url:
-            file_path = download_instagram(url)
+            file_path, caption = download_instagram(url)
         else:
             file_path = download_video(url)
 
         with open(file_path, "rb") as video:
-            bot.send_video(message.chat.id, video)
+            # Caption 1024 belgidan uzun bo'lsa qisqartiramiz (Telegram cheklov)
+            tg_caption = caption[:1024] if caption else None
+            bot.send_video(message.chat.id, video, caption=tg_caption)
 
         # Faylni o'chirib tashlaymiz
         os.remove(file_path)
