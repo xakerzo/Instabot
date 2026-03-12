@@ -3,6 +3,7 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 import yt_dlp
 import os
 import re
+import time
 from database import Database
 from dotenv import load_dotenv
 
@@ -302,8 +303,23 @@ def downloader(message):
 
 
 print("Bot ishga tushdi...")
-try:
-    bot.remove_webhook()
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
-except Exception as e:
-    print(e)
+
+# Eski session ni to'xtatib yangi session boshlash
+while True:
+    try:
+        bot.remove_webhook()
+        time.sleep(2)  # Telegram eski sessionni yopishi uchun kutamiz
+        bot.infinity_polling(
+            timeout=10,
+            long_polling_timeout=5,
+            allowed_updates=None,
+            restart_on_change=False,
+        )
+    except Exception as e:
+        err = str(e)
+        print("Bot xato:", err)
+        if "409" in err or "Conflict" in err:
+            print("409 Conflict: 5 soniya kutib qayta uriniladi...")
+            time.sleep(5)
+        else:
+            time.sleep(3)
