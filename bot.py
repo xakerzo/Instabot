@@ -2,6 +2,9 @@ import telebot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 import yt_dlp
 import os
+import re
+import glob
+import instaloader
 from database import Database
 from dotenv import load_dotenv
 
@@ -161,16 +164,55 @@ def process_broadcast(message):
 
 
 # --- YUKLAB OLISH (DOWNLOADER) QISMI ---
+
+def download_instagram(url):
+    """Instagram Reels/Post videosini instaloader bilan yuklab oladi."""
+    # URL dan shortcode ajratib olamiz
+    match = re.search(r"instagram\.com/(?:reel|p|tv)/([\w-]+)", url)
+    if not match:
+        raise ValueError("Instagram URL noto'g'ri yoki qo'llab-quvvatlanmaydi.")
+    shortcode = match.group(1)
+
+    L = instaloader.Instaloader(
+        download_pictures=False,
+        download_video_thumbnails=False,
+        download_geotags=False,
+        download_comments=False,
+        save_metadata=False,
+        post_metadata_txt_pattern="",
+        filename_pattern="{shortcode}",
+        dirname_pattern=DOWNLOAD_FOLDER,
+        quiet=True,
+    )
+
+    post = instaloader.Post.from_shortcode(L.context, shortcode)
+    L.download_post(post, target=DOWNLOAD_FOLDER)
+
+    # Yuklab olingan mp4 faylni topamiz
+    pattern = os.path.join(DOWNLOAD_FOLDER, f"{shortcode}*.mp4")
+    files = glob.glob(pattern)
+    if not files:
+        raise FileNotFoundError("Video fayl topilmadi.")
+    return files[0]
+
+
 def download_video(url):
+    """yt-dlp bilan video yuklab oladi (TikTok, YouTube Shorts, Pinterest)."""
     ydl_opts = {
         "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
         "format": "best",
-        "quiet": True
+        "quiet": True,
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/120.0.0.0 Safari/537.36"
+        }
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         file_path = ydl.prepare_filename(info)
     return file_path
+
 
 @bot.message_handler(func=lambda m: True)
 def downloader(message):
@@ -197,16 +239,33 @@ def downloader(message):
     msg = bot.reply_to(message, "⏳ Yuklanmoqda...")
 
     try:
-        file_path = download_video(url)
+        # Instagram uchun maxsus yuklovchi
+        if "instagram.com" in url:
+            file_path = download_instagram(url)
+        else:
+            file_path = download_video(url)
+
         with open(file_path, "rb") as video:
             bot.send_video(message.chat.id, video)
-        
-        # Kesib olgandan kegin o'chirib tashlaymiz
+
+        # Faylni o'chirib tashlaymiz
         os.remove(file_path)
         bot.delete_message(message.chat.id, msg.message_id)
+
     except Exception as e:
-        bot.reply_to(message, f"❌ Yuklab bo‘lmadi. Yuborgan linkingiz ochiq (public) ekanligini tekshiring.")
-        print("Xatolik: ", e)
+        err_msg = str(e)
+        print("Xatolik: ", err_msg)
+        if "login" in err_msg.lower() or "private" in err_msg.lower() or "age" in err_msg.lower():
+            bot.edit_message_text(
+                "❌ Bu post <b>yopiq (private)</b> yoki login talab qiladi. "
+                "Iltimos, ochiq (public) profil linkini yuboring.",
+                message.chat.id, msg.message_id, parse_mode="HTML"
+            )
+        else:
+            bot.edit_message_text(
+                "❌ Yuklab bo'lmadi. Iltimos qayta urinib ko'ring yoki boshqa link yuboring.",
+                message.chat.id, msg.message_id
+            )
 
 
 print("Bot ishga tushdi...")
