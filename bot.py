@@ -334,12 +334,37 @@ def process_video_url(chat_id, url, reply_to_msg_id=None):
 
 
 # ---- GURUH HANDLERI (faqat Instagram link) ----
+
+def extract_instagram_url(message):
+    """Xabardagi Instagram URL ni topib qaytaradi (text yoki entities dan)."""
+    # Oddiy matndan qidirish
+    if message.text:
+        urls = re.findall(r'https?://(?:www\.)?instagram\.com/\S+', message.text)
+        if urls:
+            return urls[0]
+    # Entities dan URL qidirish (Telegram URL entity sifatida yuborsa)
+    if message.entities:
+        for entity in message.entities:
+            if entity.type == "url":
+                url = message.text[entity.offset: entity.offset + entity.length]
+                if "instagram.com" in url:
+                    return url
+    return None
+
 @bot.message_handler(
-    func=lambda m: m.chat.type in ["group", "supergroup"] and m.text and is_instagram_url(m.text)
+    func=lambda m: m.chat.type in ["group", "supergroup"] and (
+        (m.text and "instagram.com" in m.text) or
+        (m.entities and any(
+            "instagram.com" in (m.text[e.offset:e.offset+e.length] if m.text else "")
+            for e in m.entities if e.type == "url"
+        ))
+    )
 )
 def group_instagram_handler(message):
     """Guruhda faqat Instagram linkiga javob beradi."""
-    process_video_url(message.chat.id, message.text, reply_to_msg_id=message.message_id)
+    url = extract_instagram_url(message)
+    if url:
+        process_video_url(message.chat.id, url, reply_to_msg_id=message.message_id)
 
 
 # ---- SHAXSIY CHAT HANDLERI ----
