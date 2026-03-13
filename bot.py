@@ -272,42 +272,47 @@ INSTAGRAM_STRATEGIES = [
     {"app_id": "350685531728", "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
 ]
 
+# Cobalt API manzillari (instances)
+COBALT_INSTANCES = [
+    "https://api.cobalt.tools/api/json",
+    "https://cobalt.perennialte.ch/api/json",
+    "https://api.v06.me/api/json"
+]
+
 def download_instagram_cobalt(url):
-    """Cobalt API orqali Instagram videosini yuklab olish (No-Login)."""
-    try:
-        api_url = "https://api.cobalt.tools/api/json"
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        }
-        data = {
-            "url": url,
-            "vQuality": "720",
-            "filenameStyle": "basic"
-        }
-        response = requests.post(api_url, json=data, headers=headers, timeout=15)
-        if response.status_code == 200:
-            res_json = response.json()
-            video_url = res_json.get("url")
-            if video_url:
-                # Videoni vaqtincha faylga yuklab olamiz
-                file_name = f"{DOWNLOAD_FOLDER}/{int(time.time())}.mp4"
-                v_res = requests.get(video_url, stream=True, timeout=30)
-                if v_res.status_code == 200:
-                    with open(file_name, 'wb') as f:
-                        for chunk in v_res.iter_content(chunk_size=1024*1024):
-                            f.write(chunk)
-                    return file_name, "" # Cobalt odatda caption qaytarmaydi
-        return None, None
-    except Exception as e:
-        print(f"Cobalt xatosi: {e}")
-        return None, None
+    """Bir nechta Cobalt API manzillari orqali Instagram videosini yuklab olish."""
+    for api_url in COBALT_INSTANCES:
+        try:
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            }
+            data = {
+                "url": url,
+                "vQuality": "720",
+                "filenameStyle": "basic"
+            }
+            response = requests.post(api_url, json=data, headers=headers, timeout=10)
+            if response.status_code == 200:
+                res_json = response.json()
+                video_url = res_json.get("url")
+                if video_url:
+                    file_name = f"{DOWNLOAD_FOLDER}/{int(time.time())}.mp4"
+                    v_res = requests.get(video_url, stream=True, timeout=20)
+                    if v_res.status_code == 200:
+                        with open(file_name, 'wb') as f:
+                            for chunk in v_res.iter_content(chunk_size=1024*1024):
+                                f.write(chunk)
+                        return file_name, ""
+        except Exception:
+            continue
+    return None, None
 
 def download_instagram(url):
     """Instagram videosini bir necha usul bilan yuklash: Cobalt -> Oddiy -> Proksi."""
     
-    # 1. Cobalt API orqali urinib ko'rish (Eng yaxshisi)
+    # 1. Cobalt API orqali urinib ko'rish
     file_path, caption = download_instagram_cobalt(url)
     if file_path:
         return file_path, caption
@@ -322,11 +327,9 @@ def download_instagram(url):
             "format": "best",
             "quiet": True,
             "no_warnings": True,
-            "http_headers": {
-                "User-Agent": strategy["ua"]
-            },
+            "http_headers": {"User-Agent": strategy["ua"]},
             "extractor_args": {"instagram": {"app_id": strategy["app_id"]}},
-            "socket_timeout": 10,
+            "socket_timeout": 7,
         }
         if os.path.exists("cookies.txt"):
             ydl_opts["cookiefile"] = "cookies.txt"
@@ -340,17 +343,17 @@ def download_instagram(url):
             if "private" in last_error.lower(): break
             continue
 
-    # 3. Oxirgi chora: Tasodifiy proksilar
+    # 3. Proksi orqali urinish
     if FREE_PROXIES and "private" not in last_error.lower():
-        test_proxies = random.sample(FREE_PROXIES, min(10, len(FREE_PROXIES)))
-        for proxy_addr in test_proxies:
+        # Vaqt tejash uchun faqat eng yaxshi 5 ta proksini tekshiramiz
+        for proxy_addr in random.sample(FREE_PROXIES, min(10, len(FREE_PROXIES))):
             try:
                 ydl_opts = {
                     "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
                     "format": "best",
                     "quiet": True,
                     "proxy": f"http://{proxy_addr}",
-                    "socket_timeout": 8,
+                    "socket_timeout": 5, # Proksilar uchun qisqa vaqt
                 }
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=True)
