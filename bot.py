@@ -272,12 +272,50 @@ INSTAGRAM_STRATEGIES = [
     {"app_id": "350685531728", "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
 ]
 
+def download_instagram_cobalt(url):
+    """Cobalt API orqali Instagram videosini yuklab olish (No-Login)."""
+    try:
+        api_url = "https://api.cobalt.tools/api/json"
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        }
+        data = {
+            "url": url,
+            "vQuality": "720",
+            "filenameStyle": "basic"
+        }
+        response = requests.post(api_url, json=data, headers=headers, timeout=15)
+        if response.status_code == 200:
+            res_json = response.json()
+            video_url = res_json.get("url")
+            if video_url:
+                # Videoni vaqtincha faylga yuklab olamiz
+                file_name = f"{DOWNLOAD_FOLDER}/{int(time.time())}.mp4"
+                v_res = requests.get(video_url, stream=True, timeout=30)
+                if v_res.status_code == 200:
+                    with open(file_name, 'wb') as f:
+                        for chunk in v_res.iter_content(chunk_size=1024*1024):
+                            f.write(chunk)
+                    return file_name, "" # Cobalt odatda caption qaytarmaydi
+        return None, None
+    except Exception as e:
+        print(f"Cobalt xatosi: {e}")
+        return None, None
+
 def download_instagram(url):
-    """Instagram videosini strategiya va proksilar bilan yuklashga urinadi."""
+    """Instagram videosini bir necha usul bilan yuklash: Cobalt -> Oddiy -> Proksi."""
+    
+    # 1. Cobalt API orqali urinib ko'rish (Eng yaxshisi)
+    file_path, caption = download_instagram_cobalt(url)
+    if file_path:
+        return file_path, caption
+
+    # 2. Agar Cobalt ish bermasa, yt-dlp oddiy usul
     update_proxies()
     last_error = ""
     
-    # 1. Avval proksisiz, turli strategiyalar bilan urinib ko'ramiz
     for strategy in INSTAGRAM_STRATEGIES:
         ydl_opts = {
             "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
@@ -285,11 +323,10 @@ def download_instagram(url):
             "quiet": True,
             "no_warnings": True,
             "http_headers": {
-                "User-Agent": strategy["ua"],
-                "Accept-Language": "en-US,en;q=0.9",
+                "User-Agent": strategy["ua"]
             },
             "extractor_args": {"instagram": {"app_id": strategy["app_id"]}},
-            "socket_timeout": 15,
+            "socket_timeout": 10,
         }
         if os.path.exists("cookies.txt"):
             ydl_opts["cookiefile"] = "cookies.txt"
@@ -300,30 +337,25 @@ def download_instagram(url):
                 return ydl.prepare_filename(info), (info.get("description") or info.get("title") or "")
         except Exception as e:
             last_error = str(e)
-            if "private" in last_error.lower(): break # Private bo'lsa proksi ham foyda bermaydi
+            if "private" in last_error.lower(): break
             continue
 
-    # 2. Agar oddiy usul ishlamasa, tasodifiy 3 ta proksi bilan urinib ko'ramiz
+    # 3. Oxirgi chora: Tasodifiy proksilar
     if FREE_PROXIES and "private" not in last_error.lower():
-        test_proxies = random.sample(FREE_PROXIES, min(5, len(FREE_PROXIES)))
+        test_proxies = random.sample(FREE_PROXIES, min(10, len(FREE_PROXIES)))
         for proxy_addr in test_proxies:
-            strategy = random.choice(INSTAGRAM_STRATEGIES)
-            ydl_opts = {
-                "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
-                "format": "best",
-                "quiet": True,
-                "no_warnings": True,
-                "proxy": f"http://{proxy_addr}",
-                "http_headers": {"User-Agent": strategy["ua"]},
-                "extractor_args": {"instagram": {"app_id": strategy["app_id"]}},
-                "socket_timeout": 20,
-            }
             try:
+                ydl_opts = {
+                    "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
+                    "format": "best",
+                    "quiet": True,
+                    "proxy": f"http://{proxy_addr}",
+                    "socket_timeout": 8,
+                }
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=True)
                     return ydl.prepare_filename(info), (info.get("description") or info.get("title") or "")
-            except Exception as e:
-                last_error = str(e)
+            except:
                 continue
 
     raise Exception(last_error)
