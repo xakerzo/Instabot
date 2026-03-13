@@ -239,26 +239,45 @@ def process_broadcast(message):
 
 # ---- YUKLAB OLISH FUNKSIYALARI ----
 
-# Instagram yuklash strategiyalari (AppID va User-Agent aylantirish uchun)
+import requests
+import random
+
+# ---- PROXY VA STRATEGIYA SOZLAMALARI ----
+
+FREE_PROXIES = []
+LAST_PROXY_UPDATE = 0
+
+def update_proxies():
+    """ProxyScrape dan bepul proksilar ro'yxatini yangilaydi."""
+    global FREE_PROXIES, LAST_PROXY_UPDATE
+    # Har 10 daqiqada bir marta yangilaymiz
+    if time.time() - LAST_PROXY_UPDATE < 600 and FREE_PROXIES:
+        return
+    
+    try:
+        url = "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            proxies = response.text.split('\r\n')
+            FREE_PROXIES = [p.strip() for p in proxies if p.strip()]
+            LAST_PROXY_UPDATE = time.time()
+            print(f"Yangilangan proksilar soni: {len(FREE_PROXIES)}")
+    except Exception as e:
+        print(f"Proksi olishda xato: {e}")
+
+# Instagram yuklash strategiyalari
 INSTAGRAM_STRATEGIES = [
-    {
-        "app_id": "936619743392459", # Web
-        "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
-    },
-    {
-        "app_id": "1217981644879628", # Android
-        "ua": "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36"
-    },
-    {
-        "app_id": "350685531728", # Alternate
-        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    }
+    {"app_id": "936619743392459", "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"},
+    {"app_id": "1217981644879628", "ua": "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36"},
+    {"app_id": "350685531728", "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
 ]
 
 def download_instagram(url):
-    """Instagram videosini bir necha strategiya bilan yuklab olishga urinadi."""
+    """Instagram videosini strategiya va proksilar bilan yuklashga urinadi."""
+    update_proxies()
     last_error = ""
     
+    # 1. Avval proksisiz, turli strategiyalar bilan urinib ko'ramiz
     for strategy in INSTAGRAM_STRATEGIES:
         ydl_opts = {
             "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
@@ -269,25 +288,44 @@ def download_instagram(url):
                 "User-Agent": strategy["ua"],
                 "Accept-Language": "en-US,en;q=0.9",
             },
-            "extractor_args": {
-                "instagram": {"app_id": strategy["app_id"]}
-            },
-            "socket_timeout": 20,
+            "extractor_args": {"instagram": {"app_id": strategy["app_id"]}},
+            "socket_timeout": 15,
         }
-        
+        if os.path.exists("cookies.txt"):
+            ydl_opts["cookiefile"] = "cookies.txt"
+            
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
-                file_path = ydl.prepare_filename(info)
-                # Captionni olish
-                description = info.get("description") or info.get("title") or ""
-                return file_path, description
+                return ydl.prepare_filename(info), (info.get("description") or info.get("title") or "")
         except Exception as e:
             last_error = str(e)
-            print(f"Strategiya ({strategy['app_id']}) xatoga uchradi: {last_error}")
-            continue # Keyingi strategiyaga o'tamiz
-            
-    # Agar barcha strategiyalar ish bermasa, xatolikni qaytaramiz
+            if "private" in last_error.lower(): break # Private bo'lsa proksi ham foyda bermaydi
+            continue
+
+    # 2. Agar oddiy usul ishlamasa, tasodifiy 3 ta proksi bilan urinib ko'ramiz
+    if FREE_PROXIES and "private" not in last_error.lower():
+        test_proxies = random.sample(FREE_PROXIES, min(5, len(FREE_PROXIES)))
+        for proxy_addr in test_proxies:
+            strategy = random.choice(INSTAGRAM_STRATEGIES)
+            ydl_opts = {
+                "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
+                "format": "best",
+                "quiet": True,
+                "no_warnings": True,
+                "proxy": f"http://{proxy_addr}",
+                "http_headers": {"User-Agent": strategy["ua"]},
+                "extractor_args": {"instagram": {"app_id": strategy["app_id"]}},
+                "socket_timeout": 20,
+            }
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    return ydl.prepare_filename(info), (info.get("description") or info.get("title") or "")
+            except Exception as e:
+                last_error = str(e)
+                continue
+
     raise Exception(last_error)
 
 
