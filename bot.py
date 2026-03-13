@@ -321,10 +321,16 @@ def process_video_url(chat_id, url, reply_to_msg_id=None):
             
             if file_path == "LINK_ONLY":
                 bot.delete_message(chat_id, msg.message_id) # "Yuklanmoqda"ni o'chiramiz
+                
+                # Admin captionini olamiz
+                extra = db.get_extra_caption()
+                extra_text = f"\n<b><i>{extra}</i></b>\n" if extra else ""
+                
                 # KK-Link rejimi uchun xabar formatlash
                 text = (
                     f"📩 <b>SIZNING VIDEOYINGIZ TAYYOR!</b>\n\n"
-                    f"{link_or_caption}\n\n"
+                    f"{link_or_caption}\n"
+                    f"{extra_text}\n"
                     f"🤖 @{BOT_USERNAME}"
                 )
                 bot.send_message(chat_id, text, parse_mode="HTML", reply_to_message_id=reply_to_msg_id)
