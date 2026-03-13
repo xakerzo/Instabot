@@ -272,52 +272,75 @@ INSTAGRAM_STRATEGIES = [
     {"app_id": "350685531728", "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
 ]
 
-# Cobalt API manzillari (instances)
+# Cobalt API manzillari (Ko'proq va barqarorroq instances)
 COBALT_INSTANCES = [
     "https://api.cobalt.tools/api/json",
     "https://cobalt.perennialte.ch/api/json",
-    "https://api.v06.me/api/json"
+    "https://api.v06.me/api/json",
+    "https://cobalt.shinnku.com/api/json",
+    "https://cobalt.qwerly.me/api/json",
+    "https://cobalt.cow.fi/api/json",
+    "https://cobalt.smash.moe/api/json",
+    "https://cobalt.hot.ee/api/json"
 ]
 
 def download_instagram_cobalt(url):
     """Bir nechta Cobalt API manzillari orqali Instagram videosini yuklab olish."""
     for api_url in COBALT_INSTANCES:
         try:
+            print(f"Urinish: {api_url}")
             headers = {
                 "Accept": "application/json",
                 "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
             }
             data = {
                 "url": url,
                 "vQuality": "720",
                 "filenameStyle": "basic"
             }
-            response = requests.post(api_url, json=data, headers=headers, timeout=10)
+            response = requests.post(api_url, json=data, headers=headers, timeout=8)
+            
             if response.status_code == 200:
                 res_json = response.json()
+                
+                # Agar Cobalt to'g'ridan-to'g'ri yuklash havolasini bersa
                 video_url = res_json.get("url")
+                
+                # Ba'zan "picker" bo'lishi mumkin (masalan, karusel postlarda)
+                if not video_url and res_json.get("picker"):
+                    pickers = res_json.get("picker", [])
+                    if pickers:
+                        video_url = pickers[0].get("url")
+
                 if video_url:
-                    file_name = f"{DOWNLOAD_FOLDER}/{int(time.time())}.mp4"
-                    v_res = requests.get(video_url, stream=True, timeout=20)
+                    file_name = f"{DOWNLOAD_FOLDER}/insta_{int(time.time())}.mp4"
+                    v_res = requests.get(video_url, stream=True, timeout=15)
                     if v_res.status_code == 200:
                         with open(file_name, 'wb') as f:
                             for chunk in v_res.iter_content(chunk_size=1024*1024):
-                                f.write(chunk)
-                        return file_name, ""
-        except Exception:
+                                if chunk: f.write(chunk)
+                        
+                        # Fayl hajmini tekshirish
+                        if os.path.exists(file_name) and os.path.getsize(file_name) > 1000:
+                            return file_name, ""
+        except Exception as e:
+            print(f"Xato ({api_url}): {str(e)[:50]}")
             continue
     return None, None
 
 def download_instagram(url):
-    """Instagram videosini bir necha usul bilan yuklash: Cobalt -> Oddiy -> Proksi."""
+    """Instagram videosini bir necha usul bilan yuklash: Cobalt (Multi-instance) -> Direct -> Proxy."""
     
-    # 1. Cobalt API orqali urinib ko'rish
+    # 1. Cobalt API orqali urinib ko'rish (Bir nechta serverlar)
+    print(f"Instagram yuklash boshlandi: {url}")
     file_path, caption = download_instagram_cobalt(url)
     if file_path:
+        print("Muvaffaqiyatli yuklandi (Cobalt)")
         return file_path, caption
 
-    # 2. Agar Cobalt ish bermasa, yt-dlp oddiy usul
+    # 2. Agar barcha Cobaltlar ishlamasa, oddiy yt-dlp
+    print("Cobalt serverlari ish bermadi. yt-dlp ga o'tilmoqda...")
     update_proxies()
     last_error = ""
     
@@ -343,9 +366,9 @@ def download_instagram(url):
             if "private" in last_error.lower(): break
             continue
 
-    # 3. Proksi orqali urinish
+    # 3. Proksi orqali urinish (Eng oxirgi chora)
+    print("Oddiy usul bloklandi. Proksi aylantirish boshlanmoqda...")
     if FREE_PROXIES and "private" not in last_error.lower():
-        # Vaqt tejash uchun faqat eng yaxshi 5 ta proksini tekshiramiz
         for proxy_addr in random.sample(FREE_PROXIES, min(10, len(FREE_PROXIES))):
             try:
                 ydl_opts = {
@@ -353,7 +376,7 @@ def download_instagram(url):
                     "format": "best",
                     "quiet": True,
                     "proxy": f"http://{proxy_addr}",
-                    "socket_timeout": 5, # Proksilar uchun qisqa vaqt
+                    "socket_timeout": 5,
                 }
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=True)
