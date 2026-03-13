@@ -242,203 +242,12 @@ def process_broadcast(message):
 import requests
 import random
 
-# ---- PROXY VA STRATEGIYA SOZLAMALARI ----
-
-FREE_PROXIES = []
-LAST_PROXY_UPDATE = 0
-
-def update_proxies():
-    """Bir nechta ishonchli manbalardan bepul proksilar ro'yxatini yangilaydi."""
-    global FREE_PROXIES, LAST_PROXY_UPDATE
-    if time.time() - LAST_PROXY_UPDATE < 600 and FREE_PROXIES:
-        return
-    
-    proxy_urls = [
-        "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=anonymous",
-        "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt",
-        "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/proxy.txt"
-    ]
-    
-    new_proxies = []
-    for url in proxy_urls:
-        try:
-            res = requests.get(url, timeout=10)
-            if res.status_code == 200:
-                hosts = res.text.split('\n')
-                new_proxies.extend([h.strip() for h in hosts if ":" in h])
-        except: continue
-    
-    if new_proxies:
-        FREE_PROXIES = list(set(new_proxies))
-        LAST_PROXY_UPDATE = time.time()
-        print(f"Yangilangan proksilar: {len(FREE_PROXIES)} ta")
-
-# Instagram yuklash strategiyalari
-INSTAGRAM_STRATEGIES = [
-    {"app_id": "936619743392459", "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"},
-    {"app_id": "1217981644879628", "ua": "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36"},
-    {"app_id": "350685531728", "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
-]
-
-# Cobalt API manzillari (Ko'proq va barqarorroq instances)
-COBALT_INSTANCES = [
-    "https://api.cobalt.tools/api/json",
-    "https://cobalt.perennialte.ch/api/json",
-    "https://api.v06.me/api/json",
-    "https://cobalt.shinnku.com/api/json",
-    "https://cobalt.qwerly.me/api/json",
-    "https://cobalt.cow.fi/api/json",
-    "https://cobalt.smash.moe/api/json",
-    "https://cobalt.hot.ee/api/json"
-]
-
-def download_instagram_fixer(url):
-    """Fixer-servislar (ddinsta, instafix, kkinsta, fxtagram) orqali videoni olish."""
-    domains = ["ddinstagram.com", "instafix.net", "kkinstagram.com", "fxtagram.com"]
-    clean_url = url.replace("www.", "")
-    
-    for d in domains:
-        try:
-            fixer_url = clean_url.replace("instagram.com", d)
-            print(f"Urinish (Fixer): {fixer_url}")
-            
-            res = requests.get(fixer_url, timeout=10, headers={
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
-            })
-            if res.status_code == 200:
-                html = res.text
-                video_url = None
-                patterns = [
-                    r'property="og:video" content="([^"]+)"',
-                    r'name="twitter:player:stream" content="([^"]+)"',
-                    r'property="og:video:secure_url" content="([^"]+)"',
-                    r'<source src="([^"]+)" type="video/mp4"'
-                ]
-                for p in patterns:
-                    match = re.search(p, html)
-                    if match:
-                        video_url = match.group(1).replace("&amp;", "&")
-                        break
-                
-                if video_url:
-                    file_name = f"{DOWNLOAD_FOLDER}/fix_{int(time.time())}.mp4"
-                    v_res = requests.get(video_url, stream=True, timeout=20)
-                    if v_res.status_code == 200:
-                        with open(file_name, 'wb') as f:
-                            for chunk in v_res.iter_content(chunk_size=1024*1024):
-                                if chunk: f.write(chunk)
-                        if os.path.exists(file_name) and os.path.getsize(file_name) > 10000:
-                            return file_name, ""
-        except: continue
-    return None, None
-
-def download_instagram_cobalt(url):
-    """Bir nechta Cobalt API manzillari orqali Instagram videosini yuklab olish."""
-    for api_url in COBALT_INSTANCES:
-        try:
-            print(f"Urinish: {api_url}")
-            headers = {
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
-            }
-            data = {
-                "url": url,
-                "vQuality": "720",
-                "filenameStyle": "basic"
-            }
-            response = requests.post(api_url, json=data, headers=headers, timeout=8)
-            
-            if response.status_code == 200:
-                res_json = response.json()
-                
-                # Agar Cobalt to'g'ridan-to'g'ri yuklash havolasini bersa
-                video_url = res_json.get("url")
-                
-                # Ba'zan "picker" bo'lishi mumkin (masalan, karusel postlarda)
-                if not video_url and res_json.get("picker"):
-                    pickers = res_json.get("picker", [])
-                    if pickers:
-                        video_url = pickers[0].get("url")
-
-                if video_url:
-                    file_name = f"{DOWNLOAD_FOLDER}/insta_{int(time.time())}.mp4"
-                    v_res = requests.get(video_url, stream=True, timeout=15)
-                    if v_res.status_code == 200:
-                        with open(file_name, 'wb') as f:
-                            for chunk in v_res.iter_content(chunk_size=1024*1024):
-                                if chunk: f.write(chunk)
-                        
-                        # Fayl hajmini tekshirish
-                        if os.path.exists(file_name) and os.path.getsize(file_name) > 1000:
-                            return file_name, ""
-        except Exception as e:
-            print(f"Xato ({api_url}): {str(e)[:50]}")
-            continue
-    return None, None
-
+# Instagram uchun shunchaki kkinstagram linkiga aylantirib beramiz
 def download_instagram(url):
-    """Instagram videosini bir necha usul bilan yuklash: Fixer -> Cobalt -> Direct -> Proxy."""
-    print(f"Instagram yuklash boshlandi: {url}")
-    
-    # 1. Fixer saytlari orqali (ddinstagram, kkinstagram) - Eng tezkor usul
-    file_path, caption = download_instagram_fixer(url)
-    if file_path:
-        print("Muvaffaqiyatli yuklandi (Fixer)")
-        return file_path, caption
-
-    # 2. Cobalt API orqali urinib ko'rish (Bir nechta serverlar)
-    file_path, caption = download_instagram_cobalt(url)
-    if file_path:
-        print("Muvaffaqiyatli yuklandi (Cobalt)")
-        return file_path, caption
-
-    # 2. Agar barcha Cobaltlar ishlamasa, oddiy yt-dlp
-    print("Cobalt serverlari ish bermadi. yt-dlp ga o'tilmoqda...")
-    update_proxies()
-    last_error = ""
-    
-    for strategy in INSTAGRAM_STRATEGIES:
-        ydl_opts = {
-            "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
-            "format": "best",
-            "quiet": True,
-            "no_warnings": True,
-            "http_headers": {"User-Agent": strategy["ua"]},
-            "extractor_args": {"instagram": {"app_id": strategy["app_id"]}},
-            "socket_timeout": 7,
-        }
-        if os.path.exists("cookies.txt"):
-            ydl_opts["cookiefile"] = "cookies.txt"
-            
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                return ydl.prepare_filename(info), (info.get("description") or info.get("title") or "")
-        except Exception as e:
-            last_error = str(e)
-            if "private" in last_error.lower(): break
-            continue
-
-    # 3. Proksi orqali urinish (Eng oxirgi chora)
-    print("Oddiy usul bloklandi. Proksi aylantirish boshlanmoqda...")
-    if FREE_PROXIES and "private" not in last_error.lower():
-        for proxy_addr in random.sample(FREE_PROXIES, min(10, len(FREE_PROXIES))):
-            try:
-                ydl_opts = {
-                    "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
-                    "format": "best",
-                    "quiet": True,
-                    "proxy": f"http://{proxy_addr}",
-                    "socket_timeout": 5,
-                }
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    return ydl.prepare_filename(info), (info.get("description") or info.get("title") or "")
-            except:
-                continue
-
-    raise Exception(last_error)
+    """Instagram havolasini kkinstagram.com ga aylantiradi (Telegram preview uchun)."""
+    # www. yoki oddiy instagram.com ni kkinstagram.com ga almashtiramiz
+    fixer_url = url.replace("instagram.com", "kkinstagram.com")
+    return "LINK_ONLY", fixer_url
 
 
 def download_video(url):
@@ -469,11 +278,19 @@ def process_video_url(chat_id, url, reply_to_msg_id=None):
         msg = bot.send_message(chat_id, "⏳ Yuklanmoqda...")
 
     try:
-        caption = None
         if is_instagram_url(url):
-            file_path, caption = download_instagram(url)
+            # Instagram uchun link rejimini tekshiramiz
+            file_path, link_or_caption = download_instagram(url)
+            
+            if file_path == "LINK_ONLY":
+                bot.delete_message(chat_id, msg.message_id) # "Yuklanmoqda"ni o'chiramiz
+                bot.send_message(chat_id, link_or_caption, reply_to_message_id=reply_to_msg_id)
+                return
+            
+            caption = link_or_caption
         else:
             file_path = download_video(url)
+            caption = None
 
         full_caption = build_full_caption(caption, BOT_USERNAME)
         markup = build_video_markup()
