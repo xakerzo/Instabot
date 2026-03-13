@@ -243,11 +243,48 @@ import requests
 import random
 
 # Instagram uchun shunchaki kkinstagram linkiga aylantirib beramiz
+# Instagram uchun kkinstagram orqali videoni ko'chirib olamiz
 def download_instagram(url):
-    """Instagram havolasini kkinstagram.com ga aylantiradi (Telegram preview uchun)."""
-    # www. yoki oddiy instagram.com ni kkinstagram.com ga almashtiramiz
-    fixer_url = url.replace("instagram.com", "kkinstagram.com")
-    return "LINK_ONLY", fixer_url
+    """Instagram videosini kkinstagram.com orqali botga ko'chirib oladi."""
+    try:
+        # Linkni fixerga o'zgartiramiz
+        fixer_url = url.replace("instagram.com", "kkinstagram.com")
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+        }
+        
+        # Saytni ochib, ichidagi video manzilini qidiramiz
+        res = requests.get(fixer_url, headers=headers, timeout=15)
+        if res.status_code == 200:
+            import re
+            html = res.text
+            # Video linkini qidiramiz
+            match = re.search(r'property="og:video" content="([^"]+)"', html)
+            if not match:
+                match = re.search(r'name="twitter:player:stream" content="([^"]+)"', html)
+            
+            # Captionni qidiramiz
+            c_match = re.search(r'property="og:description" content="([^"]+)"', html)
+            original_caption = c_match.group(1) if c_match else None
+            
+            if match:
+                video_url = match.group(1).replace("&amp;", "&")
+                file_name = f"{DOWNLOAD_FOLDER}/insta_{int(time.time())}.mp4"
+                
+                # Videoni botga yuklab olamiz
+                v_res = requests.get(video_url, stream=True, timeout=30)
+                if v_res.status_code == 200:
+                    with open(file_name, 'wb') as f:
+                        for chunk in v_res.iter_content(chunk_size=1024*1024):
+                            if chunk: f.write(chunk)
+                    
+                    if os.path.exists(file_name) and os.path.getsize(file_name) > 10000:
+                        return file_name, original_caption
+
+        return "LINK_ONLY", fixer_url
+    except Exception:
+        return "LINK_ONLY", url.replace("instagram.com", "kkinstagram.com")
 
 
 def download_video(url):
@@ -284,7 +321,13 @@ def process_video_url(chat_id, url, reply_to_msg_id=None):
             
             if file_path == "LINK_ONLY":
                 bot.delete_message(chat_id, msg.message_id) # "Yuklanmoqda"ni o'chiramiz
-                bot.send_message(chat_id, link_or_caption, reply_to_message_id=reply_to_msg_id)
+                # KK-Link rejimi uchun xabar formatlash
+                text = (
+                    f"📩 <b>SIZNING VIDEOYINGIZ TAYYOR!</b>\n\n"
+                    f"{link_or_caption}\n\n"
+                    f"🤖 @{BOT_USERNAME}"
+                )
+                bot.send_message(chat_id, text, parse_mode="HTML", reply_to_message_id=reply_to_msg_id)
                 return
             
             caption = link_or_caption
