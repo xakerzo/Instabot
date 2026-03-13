@@ -248,22 +248,30 @@ FREE_PROXIES = []
 LAST_PROXY_UPDATE = 0
 
 def update_proxies():
-    """ProxyScrape dan bepul proksilar ro'yxatini yangilaydi."""
+    """Bir nechta ishonchli manbalardan bepul proksilar ro'yxatini yangilaydi."""
     global FREE_PROXIES, LAST_PROXY_UPDATE
-    # Har 10 daqiqada bir marta yangilaymiz
     if time.time() - LAST_PROXY_UPDATE < 600 and FREE_PROXIES:
         return
     
-    try:
-        url = "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all"
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            proxies = response.text.split('\r\n')
-            FREE_PROXIES = [p.strip() for p in proxies if p.strip()]
-            LAST_PROXY_UPDATE = time.time()
-            print(f"Yangilangan proksilar soni: {len(FREE_PROXIES)}")
-    except Exception as e:
-        print(f"Proksi olishda xato: {e}")
+    proxy_urls = [
+        "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=anonymous",
+        "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt",
+        "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/proxy.txt"
+    ]
+    
+    new_proxies = []
+    for url in proxy_urls:
+        try:
+            res = requests.get(url, timeout=10)
+            if res.status_code == 200:
+                hosts = res.text.split('\n')
+                new_proxies.extend([h.strip() for h in hosts if ":" in h])
+        except: continue
+    
+    if new_proxies:
+        FREE_PROXIES = list(set(new_proxies))
+        LAST_PROXY_UPDATE = time.time()
+        print(f"Yangilangan proksilar: {len(FREE_PROXIES)} ta")
 
 # Instagram yuklash strategiyalari
 INSTAGRAM_STRATEGIES = [
@@ -285,31 +293,33 @@ COBALT_INSTANCES = [
 ]
 
 def download_instagram_fixer(url):
-    """Instagram Fixer saytlari (ddinstagram, kkinstagram) orqali videoni olish."""
-    # www. yoki oddiy instagram.com ni ddinstagram.com ga almashtiramiz
-    fixers = ["ddinstagram.com", "kkinstagram.com"]
-    for fixer in fixers:
+    """Fixer-servislar (ddinsta, instafix, kkinsta, fxtagram) orqali videoni olish."""
+    domains = ["ddinstagram.com", "instafix.net", "kkinstagram.com", "fxtagram.com"]
+    clean_url = url.replace("www.", "")
+    
+    for d in domains:
         try:
-            fixer_url = url.replace("instagram.com", fixer)
-            print(f"Fixer urinish: {fixer_url}")
+            fixer_url = clean_url.replace("instagram.com", d)
+            print(f"Urinish (Fixer): {fixer_url}")
             
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
-            }
-            response = requests.get(fixer_url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                html = response.text
-                # og:video yoki twitter:player:stream meta taglarini qidiramiz
+            res = requests.get(fixer_url, timeout=10, headers={
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+            })
+            if res.status_code == 200:
+                html = res.text
                 video_url = None
+                patterns = [
+                    r'property="og:video" content="([^"]+)"',
+                    r'name="twitter:player:stream" content="([^"]+)"',
+                    r'property="og:video:secure_url" content="([^"]+)"',
+                    r'<source src="([^"]+)" type="video/mp4"'
+                ]
+                for p in patterns:
+                    match = re.search(p, html)
+                    if match:
+                        video_url = match.group(1).replace("&amp;", "&")
+                        break
                 
-                # Regex orqali video havolasini topamiz
-                match = re.search(r'property="og:video" content="([^"]+)"', html)
-                if not match:
-                    match = re.search(r'name="twitter:player:stream" content="([^"]+)"', html)
-                
-                if match:
-                    video_url = match.group(1).replace("&amp;", "&")
-                    
                 if video_url:
                     file_name = f"{DOWNLOAD_FOLDER}/fix_{int(time.time())}.mp4"
                     v_res = requests.get(video_url, stream=True, timeout=20)
@@ -317,12 +327,9 @@ def download_instagram_fixer(url):
                         with open(file_name, 'wb') as f:
                             for chunk in v_res.iter_content(chunk_size=1024*1024):
                                 if chunk: f.write(chunk)
-                        
                         if os.path.exists(file_name) and os.path.getsize(file_name) > 10000:
                             return file_name, ""
-        except Exception as e:
-            print(f"Fixer xato ({fixer}): {e}")
-            continue
+        except: continue
     return None, None
 
 def download_instagram_cobalt(url):
