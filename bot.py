@@ -492,6 +492,8 @@ def process_video_url(chat_id, url, reply_to_msg_id=None):
     except Exception as e:
         err_msg = str(e)
         print("Xatolik:", err_msg)
+        
+        # Agat post private bo'lsa
         if "private" in err_msg.lower():
             try:
                 bot.edit_message_text(
@@ -499,26 +501,26 @@ def process_video_url(chat_id, url, reply_to_msg_id=None):
                     "Iltimos, ochiq (public) profil linkini yuboring.",
                     chat_id, msg.message_id, parse_mode="HTML"
                 )
-            except:
-                pass
-        elif "login" in err_msg.lower() or "confirm your identity" in err_msg.lower():
+            except: pass
+            return
+
+        # AGAR YUKLAB BO'LMASA -> KKINSTAGRAM FALLBACK
+        # Bu usulda Telegramning o'zi videoni ko'rsatib beradi
+        try:
+            fixer_link = url.replace("instagram.com", "kkinstagram.com")
+            bot.delete_message(chat_id, msg.message_id) # "Yuklanmoqda"ni o'chiramiz
+            
+            fallback_text = (
+                "⚠️ <b>To'g'ridan-to'g'ri yuklab bo'lmadi.</b>\n"
+                "Lekin ushbu havola orqali videoni ko'rishingiz mumkin:\n\n"
+                f"{fixer_link}"
+            )
+            bot.send_message(chat_id, fallback_text, parse_mode="HTML", reply_to_message_id=reply_to_msg_id)
+        except Exception as fe:
+            print(f"Fallback xatosi: {fe}")
             try:
-                bot.edit_message_text(
-                    "⚠️ Instagram vaqtincha cheklov qo'ydi (Login talab qilinmoqda). "
-                    "Birozdan so'ng qayta urinib ko'ring yoki boshqa link yuboring.",
-                    chat_id, msg.message_id
-                )
-            except:
-                pass
-        else:
-            try:
-                bot.edit_message_text(
-                    "❌ Yuklab bo'lmadi. Havola noto'g'ri yoki Instagramda texnik nosozlik. "
-                    "Iltimos, qayta urinib ko'ring.",
-                    chat_id, msg.message_id
-                )
-            except:
-                pass
+                bot.edit_message_text("❌ Yuklab bo'lmadi. Havola vaqtincha bloklangan.", chat_id, msg.message_id)
+            except: pass
 
 
 # ---- GURUH HANDLERI (faqat Instagram link) ----
