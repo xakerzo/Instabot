@@ -284,6 +284,47 @@ COBALT_INSTANCES = [
     "https://cobalt.hot.ee/api/json"
 ]
 
+def download_instagram_fixer(url):
+    """Instagram Fixer saytlari (ddinstagram, kkinstagram) orqali videoni olish."""
+    # www. yoki oddiy instagram.com ni ddinstagram.com ga almashtiramiz
+    fixers = ["ddinstagram.com", "kkinstagram.com"]
+    for fixer in fixers:
+        try:
+            fixer_url = url.replace("instagram.com", fixer)
+            print(f"Fixer urinish: {fixer_url}")
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+            }
+            response = requests.get(fixer_url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                html = response.text
+                # og:video yoki twitter:player:stream meta taglarini qidiramiz
+                video_url = None
+                
+                # Regex orqali video havolasini topamiz
+                match = re.search(r'property="og:video" content="([^"]+)"', html)
+                if not match:
+                    match = re.search(r'name="twitter:player:stream" content="([^"]+)"', html)
+                
+                if match:
+                    video_url = match.group(1).replace("&amp;", "&")
+                    
+                if video_url:
+                    file_name = f"{DOWNLOAD_FOLDER}/fix_{int(time.time())}.mp4"
+                    v_res = requests.get(video_url, stream=True, timeout=20)
+                    if v_res.status_code == 200:
+                        with open(file_name, 'wb') as f:
+                            for chunk in v_res.iter_content(chunk_size=1024*1024):
+                                if chunk: f.write(chunk)
+                        
+                        if os.path.exists(file_name) and os.path.getsize(file_name) > 10000:
+                            return file_name, ""
+        except Exception as e:
+            print(f"Fixer xato ({fixer}): {e}")
+            continue
+    return None, None
+
 def download_instagram_cobalt(url):
     """Bir nechta Cobalt API manzillari orqali Instagram videosini yuklab olish."""
     for api_url in COBALT_INSTANCES:
@@ -330,10 +371,16 @@ def download_instagram_cobalt(url):
     return None, None
 
 def download_instagram(url):
-    """Instagram videosini bir necha usul bilan yuklash: Cobalt (Multi-instance) -> Direct -> Proxy."""
-    
-    # 1. Cobalt API orqali urinib ko'rish (Bir nechta serverlar)
+    """Instagram videosini bir necha usul bilan yuklash: Fixer -> Cobalt -> Direct -> Proxy."""
     print(f"Instagram yuklash boshlandi: {url}")
+    
+    # 1. Fixer saytlari orqali (ddinstagram, kkinstagram) - Eng tezkor usul
+    file_path, caption = download_instagram_fixer(url)
+    if file_path:
+        print("Muvaffaqiyatli yuklandi (Fixer)")
+        return file_path, caption
+
+    # 2. Cobalt API orqali urinib ko'rish (Bir nechta serverlar)
     file_path, caption = download_instagram_cobalt(url)
     if file_path:
         print("Muvaffaqiyatli yuklandi (Cobalt)")
