@@ -239,28 +239,56 @@ def process_broadcast(message):
 
 # ---- YUKLAB OLISH FUNKSIYALARI ----
 
-def download_instagram(url):
-    """Instagram Reels/Post videosini yt-dlp bilan yuklab oladi. (file_path, caption) qaytaradi."""
-    ydl_opts = {
-        "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        "quiet": True,
-        "no_warnings": True,
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-                          "AppleWebKit/605.1.15 (KHTML, like Gecko) "
-                          "Version/17.0 Mobile/15E148 Safari/604.1",
-            "Accept-Language": "en-US,en;q=0.9",
-        },
-        "extractor_args": {
-            "instagram": {"app_id": "936619743392459"}
-        },
+# Instagram yuklash strategiyalari (AppID va User-Agent aylantirish uchun)
+INSTAGRAM_STRATEGIES = [
+    {
+        "app_id": "936619743392459", # Web
+        "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+    },
+    {
+        "app_id": "1217981644879628", # Android
+        "ua": "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36"
+    },
+    {
+        "app_id": "350685531728", # Alternate
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        file_path = ydl.prepare_filename(info)
-        caption = info.get("description") or info.get("title") or ""
-    return file_path, caption
+]
+
+def download_instagram(url):
+    """Instagram videosini bir necha strategiya bilan yuklab olishga urinadi."""
+    last_error = ""
+    
+    for strategy in INSTAGRAM_STRATEGIES:
+        ydl_opts = {
+            "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
+            "format": "best",
+            "quiet": True,
+            "no_warnings": True,
+            "http_headers": {
+                "User-Agent": strategy["ua"],
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            "extractor_args": {
+                "instagram": {"app_id": strategy["app_id"]}
+            },
+            "socket_timeout": 20,
+        }
+        
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                file_path = ydl.prepare_filename(info)
+                # Captionni olish
+                description = info.get("description") or info.get("title") or ""
+                return file_path, description
+        except Exception as e:
+            last_error = str(e)
+            print(f"Strategiya ({strategy['app_id']}) xatoga uchradi: {last_error}")
+            continue # Keyingi strategiyaga o'tamiz
+            
+    # Agar barcha strategiyalar ish bermasa, xatolikni qaytaramiz
+    raise Exception(last_error)
 
 
 def download_video(url):
@@ -314,19 +342,29 @@ def process_video_url(chat_id, url, reply_to_msg_id=None):
     except Exception as e:
         err_msg = str(e)
         print("Xatolik:", err_msg)
-        if "login" in err_msg.lower() or "private" in err_msg.lower() or "age" in err_msg.lower():
+        if "private" in err_msg.lower():
             try:
                 bot.edit_message_text(
-                    "❌ Bu post <b>yopiq (private)</b> yoki login talab qiladi. "
+                    "❌ Bu post <b>yopiq (private)</b> profilga tegishli. "
                     "Iltimos, ochiq (public) profil linkini yuboring.",
                     chat_id, msg.message_id, parse_mode="HTML"
+                )
+            except:
+                pass
+        elif "login" in err_msg.lower() or "confirm your identity" in err_msg.lower():
+            try:
+                bot.edit_message_text(
+                    "⚠️ Instagram vaqtincha cheklov qo'ydi (Login talab qilinmoqda). "
+                    "Birozdan so'ng qayta urinib ko'ring yoki boshqa link yuboring.",
+                    chat_id, msg.message_id
                 )
             except:
                 pass
         else:
             try:
                 bot.edit_message_text(
-                    "❌ Yuklab bo'lmadi. Qayta urinib ko'ring yoki boshqa link yuboring.",
+                    "❌ Yuklab bo'lmadi. Havola noto'g'ri yoki Instagramda texnik nosozlik. "
+                    "Iltimos, qayta urinib ko'ring.",
                     chat_id, msg.message_id
                 )
             except:
