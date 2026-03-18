@@ -44,6 +44,23 @@ def is_supported_url(text):
         "pin.it" in text
     )
 
+def extract_url(message):
+    """Xabardagi qo'llab-quvvatlanadigan URL ni topib qaytaradi."""
+    text = message.text or message.caption or ""
+    # Regex hamma turdagi linklar uchun
+    urls = re.findall(r'https?://(?:www\.)?(?:instagram\.com|tiktok\.com|youtube\.com/shorts|pinterest\.com|pin\.it)/\S+', text)
+    if urls:
+        return urls[0]
+    
+    # Entities dan qidirish
+    if message.entities:
+        for entity in message.entities:
+            if entity.type == "url":
+                url_text = text[entity.offset: entity.offset + entity.length]
+                if is_supported_url(url_text):
+                    return url_text
+    return None
+
 def check_join(user_id):
     channels = db.get_channels()
     not_joined = []
@@ -287,23 +304,69 @@ def download_instagram(url):
         return "LINK_ONLY", url.replace("instagram.com", "kkinstagram.com")
 
 
-def download_video(url):
-    """yt-dlp bilan video yuklab oladi (TikTok, YouTube Shorts, Pinterest)."""
+def download_tiktok(url):
+    """TikTok videosini tikwm.com API orqali ko'chirib oladi."""
+    try:
+        api_url = f"https://www.tikwm.com/api/?url={url}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+        }
+        res = requests.get(api_url, headers=headers, timeout=15).json()
+        if res.get("code") == 0:
+            data = res.get("data")
+            # Suv belgisiz video linki
+            video_url = data.get("play")
+            if not video_url:
+                video_url = data.get("wmplay")
+            
+            caption = data.get("title")
+            
+            if video_url:
+                file_name = f"{DOWNLOAD_FOLDER}/tiktok_{int(time.time())}.mp4"
+                v_res = requests.get(video_url, stream=True, timeout=60)
+                if v_res.status_code == 200:
+                    with open(file_name, 'wb') as f:
+                        for chunk in v_res.iter_content(chunk_size=1024*1024):
+                            if chunk: f.write(chunk)
+                    
+                    if os.path.exists(file_name) and os.path.getsize(file_name) > 10000:
+                        return file_name, caption
+    except Exception as e:
+        print(f"TikTok download error: {e}")
+    return None, None
+
+
+def download_video(url, platform="other"):
+    """yt-dlp bilan video yuklab oladi (Pinterest, YouTube Shorts)."""
+    file_name = f"{DOWNLOAD_FOLDER}/vid_{int(time.time())}.mp4"
     ydl_opts = {
         "outtmpl": f"{DOWNLOAD_FOLDER}/%(id)s.%(ext)s",
-        "format": "best",
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "quiet": True,
         "no_warnings": True,
+        "cookiefile": "cookies.txt" if os.path.exists("cookies.txt") else None,
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                           "AppleWebKit/537.36 (KHTML, like Gecko) "
                           "Chrome/120.0.0.0 Safari/537.36"
         }
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        file_path = ydl.prepare_filename(info)
-    return file_path
+    
+    # Pinterest uchun maxsus referer kerak bo'lishi mumkin
+    if "pinterest" in url or "pin.it" in url:
+        ydl_opts["http_headers"]["Referer"] = "https://www.pinterest.com/"
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            file_path = ydl.prepare_filename(info)
+            
+            # Agar ext boshqa bo'lsa (masalan mkv), uni mp4 ga o'zgartirish kerak bo'lishi mumkin
+            # Lekin biz best[ext=mp4] ni so'radik.
+            return file_path, info.get('title')
+    except Exception as e:
+        print(f"yt-dlp error: {e}")
+        return None, None
 
 
 def process_video_url(chat_id, url, reply_to_msg_id=None):
@@ -337,9 +400,17 @@ def process_video_url(chat_id, url, reply_to_msg_id=None):
                 return
             
             caption = link_or_caption
+        elif "tiktok.com" in url:
+            file_path, caption = download_tiktok(url)
+            if not file_path:
+                file_path, caption = download_video(url, "tiktok")
+        elif "pinterest.com" in url or "pin.it" in url:
+            file_path, caption = download_video(url, "pinterest")
         else:
-            file_path = download_video(url)
-            caption = None
+            file_path, caption = download_video(url)
+
+        if not file_path or not os.path.exists(file_path):
+            raise Exception("File not downloaded")
 
         full_caption = build_full_caption(caption, BOT_USERNAME)
         markup = build_video_markup()
@@ -370,18 +441,28 @@ def process_video_url(chat_id, url, reply_to_msg_id=None):
             except: pass
             return
 
-        # AGAR YUKLAB BO'LMASA -> KKINSTAGRAM FALLBACK
-        # Bu usulda Telegramning o'zi videoni ko'rsatib beradi
+        # FALLBACK JAVOBI
         try:
-            fixer_link = url.replace("instagram.com", "kkinstagram.com")
-            bot.delete_message(chat_id, msg.message_id) # "Yuklanmoqda"ni o'chiramiz
+            bot.delete_message(chat_id, msg.message_id)
             
-            fallback_text = (
-                "⚠️ <b>To'g'ridan-to'g'ri yuklab bo'lmadi.</b>\n"
-                "Lekin ushbu havola orqali videoni ko'rishingiz mumkin:\n\n"
-                f"{fixer_link}"
-            )
-            bot.send_message(chat_id, fallback_text, parse_mode="HTML", reply_to_message_id=reply_to_msg_id)
+            if is_instagram_url(url):
+                fixer_link = url.replace("instagram.com", "kkinstagram.com")
+                text = (
+                    "⚠️ <b>To'g'ridan-to'g'ri yuklab bo'lmadi.</b>\n"
+                    "Lekin ushbu havola orqali videoni ko'rishingiz mumkin:\n\n"
+                    f"{fixer_link}"
+                )
+            elif "tiktok.com" in url:
+                fixer_link = url.replace("tiktok.com", "vxtiktok.com")
+                text = (
+                    "⚠️ <b>Videoni hozircha yuklay olmadim.</b>\n"
+                    "Ushbu havola orqali videoni ko'rishingiz mumkin:\n\n"
+                    f"{fixer_link}"
+                )
+            else:
+                text = "❌ <b>Kechirasiz, ushbu videoni yuklab olishda xatolik yuz berdi.</b>\nIltimos, keyinroq qayta urinib ko'ring yoki boshqa havola yuboring."
+
+            bot.send_message(chat_id, text, parse_mode="HTML", reply_to_message_id=reply_to_msg_id)
         except Exception as fe:
             print(f"Fallback xatosi: {fe}")
             try:
@@ -391,34 +472,14 @@ def process_video_url(chat_id, url, reply_to_msg_id=None):
 
 # ---- GURUH HANDLERI (faqat Instagram link) ----
 
-def extract_instagram_url(message):
-    """Xabardagi Instagram URL ni topib qaytaradi (text yoki entities dan)."""
-    # Oddiy matndan qidirish
-    if message.text:
-        urls = re.findall(r'https?://(?:www\.)?instagram\.com/\S+', message.text)
-        if urls:
-            return urls[0]
-    # Entities dan URL qidirish (Telegram URL entity sifatida yuborsa)
-    if message.entities:
-        for entity in message.entities:
-            if entity.type == "url":
-                url = message.text[entity.offset: entity.offset + entity.length]
-                if "instagram.com" in url:
-                    return url
-    return None
+# --- URLni ajratib olish endi yuqoridagi extract_url funksiyasida ---
 
 @bot.message_handler(
-    func=lambda m: m.chat.type in ["group", "supergroup"] and (
-        (m.text and "instagram.com" in m.text) or
-        (m.entities and any(
-            "instagram.com" in (m.text[e.offset:e.offset+e.length] if m.text else "")
-            for e in m.entities if e.type == "url"
-        ))
-    )
+    func=lambda m: m.chat.type in ["group", "supergroup"] and is_supported_url(m.text or m.caption)
 )
-def group_instagram_handler(message):
-    """Guruhda faqat Instagram linkiga javob beradi."""
-    url = extract_instagram_url(message)
+def group_handler(message):
+    """Guruhda qo'llab-quvvatlanadigan linklarga javob beradi."""
+    url = extract_url(message)
     if url:
         process_video_url(message.chat.id, url, reply_to_msg_id=message.message_id)
 
@@ -437,14 +498,14 @@ def downloader(message):
         send_join_request(message.chat.id, not_joined)
         return
 
-    url = message.text
+    url = extract_url(message)
+
+    if not url:
+        bot.reply_to(message, "❌ Menga faqat Instagram (Reels), TikTok, YouTube Shorts yoki Pinterest dan video havolasini yuboring.")
+        return
 
     if "youtube.com" in url and "shorts" not in url:
         bot.reply_to(message, "❌ Faqat YouTube Shorts ishlaydi")
-        return
-
-    if not is_supported_url(url):
-        bot.reply_to(message, "❌ Menga faqat Instagram (Reels), TikTok, YouTube Shorts yoki Pinterest dan video havolasini yuboring.")
         return
 
     process_video_url(message.chat.id, url, reply_to_msg_id=message.message_id)
