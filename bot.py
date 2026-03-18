@@ -307,17 +307,18 @@ def download_instagram(url):
 def download_tiktok(url):
     """TikTok videosini tikwm.com API orqali ko'chirib oladi."""
     try:
-        api_url = f"https://www.tikwm.com/api/?url={url}"
+        # Linkni biroz tozalaymiz (agar oxirida qo'shimcha belgilar bo'lsa)
+        url = url.split("?")[0] if "?" in url else url
+        
+        api_url = f"https://api.tikwm.com/api/?url={url}"
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
         }
         res = requests.get(api_url, headers=headers, timeout=15).json()
         if res.get("code") == 0:
             data = res.get("data")
-            # Suv belgisiz video linki
-            video_url = data.get("play")
-            if not video_url:
-                video_url = data.get("wmplay")
+            # Suv belgisiz (HD yoki play)
+            video_url = data.get("play") or data.get("wmplay")
             
             caption = data.get("title")
             
@@ -348,7 +349,7 @@ def download_video(url, platform="other"):
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                           "AppleWebKit/537.36 (KHTML, like Gecko) "
-                          "Chrome/120.0.0.0 Safari/537.36"
+                          "Chrome/133.0.0.0 Safari/537.36"
         }
     }
     
@@ -448,19 +449,20 @@ def process_video_url(chat_id, url, reply_to_msg_id=None):
             if is_instagram_url(url):
                 fixer_link = url.replace("instagram.com", "kkinstagram.com")
                 text = (
-                    "⚠️ <b>To'g'ridan-to'g'ri yuklab bo'lmadi.</b>\n"
-                    "Lekin ushbu havola orqali videoni ko'rishingiz mumkin:\n\n"
-                    f"{fixer_link}"
+                    "📩 <b>Hozircha faqat video ko'rish havolasini bera olaman:</b>\n"
+                    f"👉 {fixer_link}\n\n"
+                    "Bu havola orqali videoni yuklab olmasdan to'g'ridan-to'g'ri ko'rishingiz mumkin!"
                 )
             elif "tiktok.com" in url:
                 fixer_link = url.replace("tiktok.com", "vxtiktok.com")
                 text = (
-                    "⚠️ <b>Videoni hozircha yuklay olmadim.</b>\n"
-                    "Ushbu havola orqali videoni ko'rishingiz mumkin:\n\n"
-                    f"{fixer_link}"
+                    "📽 <b>Videoni fayl ko'rinishida yubora olmadim.</b>\n\n"
+                    f"Lekin orqali ushbu havola orqali videoni ko'rishingiz mumkin:\n"
+                    f"🔗 {fixer_link}\n\n"
+                    "Hozirda TikTok serverlari biroz sekin ishlamoqda, iltimos keyinroq qayta urinib ko'ring."
                 )
             else:
-                text = "❌ <b>Kechirasiz, ushbu videoni yuklab olishda xatolik yuz berdi.</b>\nIltimos, keyinroq qayta urinib ko'ring yoki boshqa havola yuboring."
+                text = "❌ <b>Hozirda videoni yuklashda xatolik yuz berdi.</b>\nIltimos, bir ozdan so'ng xabaringizni qayta yuboring."
 
             bot.send_message(chat_id, text, parse_mode="HTML", reply_to_message_id=reply_to_msg_id)
         except Exception as fe:
