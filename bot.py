@@ -308,18 +308,16 @@ def download_tiktok(url):
     """TikTok videosini tikwm.com API orqali ko'chirib oladi."""
     try:
         # Linkni biroz tozalaymiz (agar oxirida qo'shimcha belgilar bo'lsa)
-        url = url.split("?")[0] if "?" in url else url
+        if "tiktok.com" not in url: return None, None
         
-        api_url = f"https://api.tikwm.com/api/?url={url}"
+        api_url = f"https://tikwm.com/api/?url={url}"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
         }
-        res = requests.get(api_url, headers=headers, timeout=15).json()
+        res = requests.get(api_url, headers=headers, timeout=20).json()
         if res.get("code") == 0:
             data = res.get("data")
-            # Suv belgisiz (HD yoki play)
             video_url = data.get("play") or data.get("wmplay")
-            
             caption = data.get("title")
             
             if video_url:
