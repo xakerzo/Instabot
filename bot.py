@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sys
+import os
 from aiogram import Bot, Dispatcher
 from config import Config
 from database import init_db
@@ -15,20 +16,26 @@ logging.basicConfig(
 )
 
 async def main():
-    # 1. Ma'lumotlar bazasini inisializatsiya qilish
+    # 1. Instagram Cookies-ni faylga yozish
+    if Config.INSTAGRAM_COOKIES:
+        with open('cookies.txt', 'w') as f:
+            f.write(Config.INSTAGRAM_COOKIES)
+        print("✅ Instagram Cookies o'rnatildi.")
+
+    # 2. Ma'lumotlar bazasini inisializatsiya qilish
     await init_db()
     
-    # 2. Bot va Dispatcher
+    # 3. Bot va Dispatcher
     bot = Bot(token=Config.BOT_TOKEN)
     dp = Dispatcher()
 
-    # 3. Middleware qo'shish
+    # 4. Middleware qo'shish
     dp.message.middleware(ThrottlingMiddleware())
 
-    # 4. Handlerlarni ulash
+    # 5. Handlerlarni ulash
     dp.include_router(user_handlers.router)
 
-    # 5. Polling boshlash
+    # 6. Polling boshlash
     print("🚀 Bot ishga tushdi...")
     await dp.start_polling(bot)
 
