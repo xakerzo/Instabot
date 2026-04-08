@@ -29,16 +29,14 @@ async def back_to_admin(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("🛠 Admin panelga xush kelibsiz:", reply_markup=admin_main_keyboard())
 
-# --- STATISTIKA ---
 @router.callback_query(F.data == "admin_stats")
 async def admin_stats(callback: types.CallbackQuery):
     count = await database.get_users_count()
     await callback.message.edit_text(f"📊 Jami obunachilar: {count} ta", reply_markup=back_to_admin_keyboard())
 
-# --- BROADCAST (XABAR TARQATISH) ---
 @router.callback_query(F.data == "admin_broadcast")
 async def start_broadcast(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.edit_text("📢 Menga userlarga tarqatmoqchi bo'lgan xabaringizni yuboring (tekst, rasm, video, tugmali farqi yo'q):", 
+    await callback.message.edit_text("📢 Menga userlarga tarqatmoqchi bo'lgan xabaringizni yuboring:", 
                                      reply_markup=back_to_admin_keyboard())
     await state.set_state(AdminStates.waiting_for_broadcast)
 
@@ -52,22 +50,24 @@ async def perform_broadcast(message: types.Message, state: FSMContext):
     
     for user_id in users:
         try:
-            await message.copy_to(chat_id=user_id) # Hammasini copy qiladi (formatting, buttons)
+            await message.copy_to(chat_id=user_id)
             sent += 1
             if sent % 10 == 0:
                 await wait_msg.edit_text(f"⏳ Tarqatilmoqda ({sent}/{len(users)})...")
-            await asyncio.sleep(0.05) # Telegram limitlaridan qochish
+            await asyncio.sleep(0.05)
         except:
             failed += 1
             
     await wait_msg.edit_text(f"✅ Tarqatish yakunlandi!\n\nSizga: {sent} kishiga bordi.\nO'chirilgan akkauntlar: {failed}", reply_markup=back_to_admin_keyboard())
 
-# --- CAPTION (VIDEO TAGIDAGI MATN) ---
 @router.callback_query(F.data == "admin_caption")
 async def start_caption_set(callback: types.CallbackQuery, state: FSMContext):
     current = await database.get_setting('custom_caption')
-    await callback.message.edit_text(f"✍️ Hozirgi qo'shimcha caption: \n\n{current or 'Yo'q'}\n\nYangi matnni yuboring (o'chirish uchun '0' deb yozing):", 
-                                     reply_markup=back_to_admin_keyboard())
+    display_text = current if current else "Hozircha yo'q" # "Yo'q" dagi xato olib tashlandi
+    await callback.message.edit_text(
+        f"✍️ Hozirgi qo'shimcha caption:\n\n{display_text}\n\nYangi matnni yuboring (o'chirish uchun '0' deb yozing):", 
+        reply_markup=back_to_admin_keyboard()
+    )
     await state.set_state(AdminStates.waiting_for_caption)
 
 @router.message(AdminStates.waiting_for_caption)
@@ -77,7 +77,6 @@ async def set_caption(message: types.Message, state: FSMContext):
     await database.set_setting('custom_caption', val)
     await message.answer("✅ Caption muvaffaqiyatli saqlandi!", reply_markup=back_to_admin_keyboard())
 
-# --- KANALLAR BOSHQRUVI ---
 @router.callback_query(F.data == "admin_channels")
 async def list_channels(callback: types.CallbackQuery):
     channels = await database.get_channels()
