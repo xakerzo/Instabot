@@ -13,36 +13,26 @@ class DownloaderService:
             'nocheckcertificate': True,
             'noplaylist': True,
             'outtmpl': f'{Config.DOWNLOAD_PATH}/%(id)s.%(ext)s',
+            # User-Agent-ni haqiqiy brauzerga o'xshatish
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
+        
+        # Agar cookies.txt bo'lsa, uni ishlatish
+        if os.path.exists('cookies.txt'):
+            self.common_opts['cookiefile'] = 'cookies.txt'
         
     def _get_proxy(self) -> Optional[str]:
         if not Config.USE_PROXY:
             return None
-        # Bu yerda oddiy proxy rotation mantiqini qo'shish mumkin
-        # Masalan, proxies.txt faylidan tasodifiy bittasini olish
         if os.path.exists(Config.PROXY_LIST_PATH):
             with open(Config.PROXY_LIST_PATH, 'r') as f:
-                proxies = f.readlines()
+                proxies = [l.strip() for l in f.readlines() if l.strip() and not l.startswith('#')]
                 if proxies:
                     import random
-                    return random.choice(proxies).strip()
+                    return random.choice(proxies)
         return None
 
-    async def extract_info(self, url: str) -> Dict[str, Any]:
-        """Video haqida ma'lumot olish (yuklamasdan)"""
-        opts = self.common_opts.copy()
-        proxy = self._get_proxy()
-        if proxy:
-            opts['proxy'] = proxy
-
-        loop = asyncio.get_event_loop()
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            # extract_info bloklovchi funksiya, shuning uchun run_in_executor ishlatamiz
-            info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=False))
-            return info
-
     async def download(self, url: str, mode: str = 'video') -> Dict[str, Any]:
-        """Videoni yoki audioni yuklab olish"""
         opts = self.common_opts.copy()
         
         if mode == 'audio':
@@ -55,7 +45,6 @@ class DownloaderService:
                 }],
             })
         else:
-            # Eng yaxshi sifat, lekin max_file_size dan oshmasligi kerak (ixtiyoriy)
             opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
 
         proxy = self._get_proxy()
