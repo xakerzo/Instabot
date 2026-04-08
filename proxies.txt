@@ -1,4 +1,5 @@
-# Bu yerga proxylaringizni qatorma-qator yozing.
-# Format: http://username:password@ip:port yoki http://ip:port
-# Masalan:
-# http://proxyuser:proxypass@1.2.3.4:8080
+http://oY8Rqk:eWbY3z@85.195.81.142:12219
+http://oY8Rqk:eWbY3z@85.195.81.142:12217
+http://DNaYC6:qVhEwz@45.145.57.219:11773
+http://DNaYC6:qVhEwz@45.145.57.219:11772
+http://DNaYC6:qVhEwz@45.145.57.218:11622
