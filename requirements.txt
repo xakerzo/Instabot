@@ -8,3 +8,4 @@ arq==0.25.0
 sqlalchemy[asyncio]==2.0.32
 aiosqlite==0.20.0
 structlog==24.4.0
+cachetools==5.5.0
