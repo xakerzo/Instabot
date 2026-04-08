@@ -1,6 +1,5 @@
 from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware, types
-from aiogram.cache import MemoryCache
 from cachetools import TTLCache
 
 class ThrottlingMiddleware(BaseMiddleware):
