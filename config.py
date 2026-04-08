@@ -22,11 +22,16 @@ class Config:
     PROXY_LIST_PATH = os.getenv("PROXY_LIST_PATH", "./proxies.txt")
     CACHE_TTL = 3600 * 24 * 7 
 
-# Kukilarni darhol faylga yozib qo'yamiz (Worker ko'rishi uchun)
+# Kukilarni mustahkamroq yozish
 if Config.INSTAGRAM_COOKIES:
-    with open('cookies.txt', 'w') as f:
-        f.write(Config.INSTAGRAM_COOKIES)
-    print("✅ Instagram Cookies fayli yaratildi.")
+    content = Config.INSTAGRAM_COOKIES.strip()
+    # Netscape sarlavhasi yo'q bo'lsa, qo'shib qo'yamiz
+    if not content.startswith("# Netscape"):
+        content = "# Netscape HTTP Cookie File\n" + content
+        
+    with open('cookies.txt', 'w', encoding='utf-8') as f:
+        f.write(content)
+    print(f"✅ Instagram Cookies fayli yuklandi ({len(content)} bayt)")
 
 os.makedirs(Config.DOWNLOAD_PATH, exist_ok=True)
 os.makedirs("./data", exist_ok=True)
