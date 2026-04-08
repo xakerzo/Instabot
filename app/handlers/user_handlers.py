@@ -1,4 +1,4 @@
-from aiogram import Router, F, types, Bot # Bot qo'shildi
+from aiogram import Router, F, types, Bot
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from arq import create_pool
@@ -16,7 +16,7 @@ async def get_redis():
         return await create_pool(RedisSettings.from_dsn(Config.REDIS_URL))
     return await create_pool(RedisSettings(host=Config.REDIS_HOST, port=Config.REDIS_PORT, password=Config.REDIS_PASSWORD))
 
-async def check_subscription(user_id: int, bot: Bot): # types.Bot -> Bot bo'ldi
+async def check_subscription(user_id: int, bot: Bot):
     channels = await get_channels()
     not_subscribed = []
     for ch in channels:
@@ -46,7 +46,6 @@ async def handle_message(message: types.Message):
         if message.chat.type in ['group', 'supergroup']: return
         return await message.answer("❌ Bu Instagram linki emas!")
 
-    # Admin xabari emasligini tekshirish (agar admin link tashlasa ham tekshiruvdan o'tishi uchun)
     if not message.from_user.id in Config.ADMIN_IDS:
         not_subscribed = await check_subscription(message.from_user.id, message.bot)
         if not_subscribed:
@@ -72,7 +71,7 @@ async def handle_message(message: types.Message):
             caption_text += f"\n\n{extra_caption}"
 
         builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data="cached"))
+        builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data=f"save:{cached.file_id}")) # file_id qo'shildi
         builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
 
         return await message.reply_video(
@@ -93,6 +92,17 @@ async def check_sub_btn(callback: types.CallbackQuery):
     else:
         await callback.message.delete()
         await callback.message.answer("✅ Raxmat! Endi Instagram linkini yuborishingiz mumkin.")
+
+@router.callback_query(F.data.startswith("save:"))
+async def handle_save_callback(callback: types.CallbackQuery):
+    file_id = callback.data.split(":")[1]
+    # Videoni userga qayta yuboramiz (Forward emas, barchasi bilan birga copy)
+    await callback.bot.copy_message(
+        chat_id=callback.from_user.id,
+        from_chat_id=callback.message.chat.id,
+        message_id=callback.message.message_id
+    )
+    await callback.answer("📂 Videoni o'zingizga (Saved Messages) saqlash uchun tepada chiqqan xabarni Forward qiling!", show_alert=True)
 
 @router.callback_query(F.data == "cached")
 async def handle_cached_callback(callback: types.CallbackQuery):
