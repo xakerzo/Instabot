@@ -1,5 +1,6 @@
 import os
 import asyncio
+import traceback
 from arq import create_pool
 from arq.connections import RedisSettings
 from aiogram import Bot, types
@@ -31,20 +32,21 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
         await bot.edit_message_text("📤 Botga yuborilmoqda...", chat_id=user_id, message_id=message_id)
         
         sent_msg = None
+        input_file = types.FSInputFile(file_path)
+        
         if mode == 'audio':
             sent_msg = await bot.send_audio(
                 chat_id=user_id,
-                audio=types.FSInputFile(file_path),
+                audio=input_file,
                 title=result['title']
             )
         else:
-            # Video tagiga MP3 tugmasini qo'shish
             builder = InlineKeyboardBuilder()
             builder.row(types.InlineKeyboardButton(text="🎵 MP3 formatda olish", callback_data=f"dl:audio:{url_hash}"))
             
             sent_msg = await bot.send_video(
                 chat_id=user_id,
-                video=types.FSInputFile(file_path),
+                video=input_file,
                 caption=f"✅ {result['title']}\n\n🤖 @YourBot",
                 reply_markup=builder.as_markup()
             )
@@ -57,7 +59,10 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
         await bot.delete_message(chat_id=user_id, message_id=message_id)
 
     except Exception as e:
-        await bot.send_message(user_id, f"❌ Xatolik: {str(e)[:100]}")
+        # Xatolikni to'liq ko'rsatish
+        error_msg = traceback.format_exc()
+        print(f"Detailed Worker Error: {error_msg}")
+        await bot.send_message(user_id, f"❌ Xatolik yuz berdi:\n<code>{str(e)}</code>", parse_mode="HTML")
 
 class WorkerSettings:
     functions = [download_task]
