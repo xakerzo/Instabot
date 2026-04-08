@@ -7,8 +7,11 @@ class Config:
     BOT_TOKEN = os.getenv("BOT_TOKEN")
     ADMIN_IDS = [int(i) for i in os.getenv("ADMIN_IDS", "").split(",") if i]
     
-    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-    REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+    # Redis - Railway REDIS_URL yoki REDISHOST/REDISPORT ni ishlatadi
+    REDIS_URL = os.getenv("REDIS_URL")
+    REDIS_HOST = os.getenv("REDISHOST", os.getenv("REDIS_HOST", "localhost"))
+    REDIS_PORT = int(os.getenv("REDISPORT", os.getenv("REDIS_PORT", 6379)))
+    REDIS_PASSWORD = os.getenv("REDISPASSWORD", os.getenv("REDIS_PASSWORD"))
     
     DB_URL = os.getenv("DB_URL", "sqlite+aiosqlite:///./data/bot.db")
     
@@ -21,8 +24,8 @@ class Config:
     USE_PROXY = os.getenv("USE_PROXY", "False").lower() == "true"
     PROXY_LIST_PATH = os.getenv("PROXY_LIST_PATH", "./proxies.txt")
 
-    # Kesh muddati (sekundda)
-    CACHE_TTL = 3600 * 24 * 7  # 1 hafta
+    # Kesh muddati
+    CACHE_TTL = 3600 * 24 * 7 
 
 # Kataloglarni tekshirish
 os.makedirs(Config.DOWNLOAD_PATH, exist_ok=True)
