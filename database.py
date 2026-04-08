@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, String, DateTime, BigInteger, Text, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, BigInteger, Text, Boolean, func
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.future import select
@@ -35,6 +35,12 @@ class Setting(Base):
     key = Column(String(50), primary_key=True)
     value = Column(Text)
 
+class Stat(Base): # Stat klassi borligini ta'minlaymiz
+    __tablename__ = 'stats'
+    id = Column(Integer, primary_key=True)
+    key = Column(String(50), unique=True)
+    value = Column(Integer, default=0)
+
 engine = create_async_engine(Config.DB_URL)
 AsyncSessionLocal = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
@@ -43,11 +49,16 @@ async def init_db(ctx=None):
         await conn.run_sync(Base.metadata.create_all)
     
     async with AsyncSessionLocal() as session:
-        # Default caption yaratish
         res = await session.execute(select(Setting).where(Setting.key == 'custom_caption'))
         if not res.scalar():
             session.add(Setting(key='custom_caption', value=""))
-            await session.commit()
+        
+        # Stat uchun total_downloads ni yaratish
+        res_stat = await session.execute(select(Stat).where(Stat.key == 'total_downloads'))
+        if not res_stat.scalar():
+            session.add(Stat(key='total_downloads', value=0))
+            
+        await session.commit()
 
 async def add_user(user_id: int, username: str):
     async with AsyncSessionLocal() as session:
@@ -63,7 +74,6 @@ async def get_all_users():
 
 async def get_users_count():
     async with AsyncSessionLocal() as session:
-        from sqlalchemy import func
         result = await session.execute(select(func.count(User.id)))
         return result.scalar()
 
@@ -78,6 +88,14 @@ async def get_from_cache(url_hash: str):
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Cache).where(Cache.url_hash == url_hash))
         return result.scalar()
+
+async def increment_stats(): # Funksiya aniq qo'shildi
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Stat).where(Stat.key == 'total_downloads'))
+        stat = result.scalar()
+        if stat:
+            stat.value += 1
+            await session.commit()
 
 # Kanallar boshqaruvi
 async def add_channel(chat_id: int, title: str, url: str):
