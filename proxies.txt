@@ -1,0 +1,4 @@
+# Bu yerga proxylaringizni qatorma-qator yozing.
+# Format: http://username:password@ip:port yoki http://ip:port
+# Masalan:
+# http://proxyuser:proxypass@1.2.3.4:8080
