@@ -56,7 +56,7 @@ class DownloaderService:
             })
         else:
             # Eng yaxshi sifat, lekin max_file_size dan oshmasligi kerak (ixtiyoriy)
-            opts['format'] = f'bestvideo[ext=mp4]+bestaudio[m4a]/best[ext=mp4]/best'
+            opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
 
         proxy = self._get_proxy()
         if proxy:
