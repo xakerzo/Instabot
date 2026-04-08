@@ -27,7 +27,7 @@ class DownloaderService:
                 'Sec-Fetch-User: ?1',
                 'Upgrade-Insecure-Requests: 1',
             ],
-            'wait_for_video': (5, 10), # Instagram yuklanishini kutish
+            'wait_for_video': (1, 3), # Instagram yuklanishini kutish vaqtini kamaytirdik
         }
         # Cookies faylini tekshirish (cookies.txt yoki Cookie.txt)
         cookie_file = 'cookies.txt' if os.path.exists('cookies.txt') else ('Cookie.txt' if os.path.exists('Cookie.txt') else None)
@@ -70,8 +70,8 @@ class DownloaderService:
         
         loop = asyncio.get_event_loop()
         with yt_dlp.YoutubeDL(opts) as ydl:
-            # So'rov oldidan biroz kutish (spam deb o'ylamasligi uchun)
-            await asyncio.sleep(random.uniform(1, 3))
+            # So'rov oldidan biroz kutishni kamaytirdik
+            # await asyncio.sleep(random.uniform(1, 3))
             info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=True))
             file_path = ydl.prepare_filename(info)
             return {
@@ -90,7 +90,7 @@ class DownloaderService:
             opts_info['proxy'] = proxy
             
         with yt_dlp.YoutubeDL(opts_info) as ydl:
-            await asyncio.sleep(random.uniform(1, 2))
+            # await asyncio.sleep(random.uniform(1, 2))
             info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=False))
             
             track = info.get('track')
