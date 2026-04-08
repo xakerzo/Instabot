@@ -17,8 +17,9 @@ class Cache(Base):
     __tablename__ = 'cache'
     id = Column(Integer, primary_key=True)
     url_hash = Column(String(255), unique=True, index=True)
+    original_url = Column(String(1024)) # URL ni saqlash uchun ustun qo'shildi
     file_id = Column(String(512))
-    file_type = Column(String(50)) # video, audio, photo
+    file_type = Column(String(50)) 
     file_size = Column(BigInteger)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
@@ -31,8 +32,9 @@ class Stat(Base):
 engine = create_async_engine(Config.DB_URL)
 AsyncSessionLocal = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
-async def init_db(ctx=None): # ctx=None qo'shildi (ARQ uchun)
+async def init_db(ctx=None):
     async with engine.begin() as conn:
+        # DB schema yangilanyapti
         await conn.run_sync(Base.metadata.create_all)
     
     async with AsyncSessionLocal() as session:
@@ -48,14 +50,15 @@ async def add_user(user_id: int, username: str):
             session.add(User(id=user_id, username=username))
             await session.commit()
 
-async def add_to_cache(url_hash: str, file_id: str, file_type: str, file_size: int):
+async def add_to_cache(url_hash: str, file_id: str, file_type: str, file_size: int, original_url: str = None):
     async with AsyncSessionLocal() as session:
-        # Eski keshni tekshirish (agar bo'lsa yangilamaymiz/xato bermaymiz)
+        # Mavjud keshni tekshirish
         result = await session.execute(select(Cache).where(Cache.url_hash == url_hash))
-        if result.scalar():
+        existing = result.scalar()
+        if existing:
             return
             
-        cache = Cache(url_hash=url_hash, file_id=file_id, file_type=file_type, file_size=file_size)
+        cache = Cache(url_hash=url_hash, file_id=file_id, file_type=file_type, file_size=file_size, original_url=original_url)
         session.add(cache)
         await session.commit()
 
