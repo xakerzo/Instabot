@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Text, BigInteger
+from sqlalchemy import Column, Integer, String, DateTime, BigInteger
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.future import select
@@ -31,11 +31,10 @@ class Stat(Base):
 engine = create_async_engine(Config.DB_URL)
 AsyncSessionLocal = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
-async def init_db():
+async def init_db(ctx=None): # ctx=None qo'shildi (ARQ uchun)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
-    # Statistika uchun boshlang'ich qiymat
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Stat).where(Stat.key == 'total_downloads'))
         if not result.scalar():
@@ -51,6 +50,11 @@ async def add_user(user_id: int, username: str):
 
 async def add_to_cache(url_hash: str, file_id: str, file_type: str, file_size: int):
     async with AsyncSessionLocal() as session:
+        # Eski keshni tekshirish (agar bo'lsa yangilamaymiz/xato bermaymiz)
+        result = await session.execute(select(Cache).where(Cache.url_hash == url_hash))
+        if result.scalar():
+            return
+            
         cache = Cache(url_hash=url_hash, file_id=file_id, file_type=file_type, file_size=file_size)
         session.add(cache)
         await session.commit()
