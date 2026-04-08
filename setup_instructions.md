@@ -44,3 +44,10 @@ Ushbu bot Instagram, TikTok, YouTube Shorts va Pinterest-dan media yuklash uchun
 
 ## 🔑 Proxy (Ixtiyoriy):
 Agar Instagram sizni bloklasa, `proxies.txt` fayliga proxylarni qatorma-qator yozing va `.env`da `USE_PROXY=True` qiling.
+
+## 🍪 Instagram Cookies (Juda Muhim):
+Instagram ko'p hollarda botlarni bloklaydi yoki "Requested content is not available" xatosini beradi. Buni oldini olish uchun:
+1. Brauzeringizda (Chrome/Edge) [Get Cookie.txt LOCALLY](https://chrome.google.com/webstore/detail/get-cookietxt-locally/ccjbbpchehhonacpaolfmhonghlhbaln) kengaytmasini o'rnating.
+2. Instagram.com ga kiring va profilga login qiling.
+3. Kengaytmani ochib, "Export" tugmasini bosing va faylni `cookies.txt` nomi bilan bot papkasiga saqlang.
+4. Botni qayta ishga tushiring.

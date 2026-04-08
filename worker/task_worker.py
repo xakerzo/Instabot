@@ -25,7 +25,7 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
 
         await bot.edit_message_text("⏳ Yuklanmoqda...", chat_id=user_id, message_id=message_id)
         
-        result = await downloader.download(url, 'video')
+        result = await downloader.download(url, mode)
         file_path = result['file_path']
         
         await bot.edit_message_text("📤 Botga yuborilmoqda...", chat_id=user_id, message_id=message_id)
@@ -64,6 +64,8 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
         error_msg = str(e)
         if "empty media response" in error_msg.lower():
             error_msg = "❌ Kechirasiz, bu video yopiq profilga tegishli yoki Instagram kirishni rad etdi. Bot faqat ochiq videolarni yuklay oladi."
+        elif "rate-limit" in error_msg.lower() or "login required" in error_msg.lower() or "not available" in error_msg.lower():
+            error_msg = "⚠️ <b>Instagram cheklovi yuz berdi!</b>\n\nInstagram botni blokladi yoki login talab qilmoqda. \n\n<b>Echimi:</b>\n1. Brauzeringizda Instagramga kiring\n2. Cookies-ni 'cookies.txt' fayliga eksport qiling va bot papkasiga tashlang.\n3. Yoki biroz kutib qayta urinib ko'ring."
         
         await bot.send_message(user_id, f"❌ Xatolik yuz berdi:\n\n{error_msg}", parse_mode="HTML")
         if message_id:

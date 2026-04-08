@@ -16,17 +16,32 @@ class DownloaderService:
             'noplaylist': True,
             'outtmpl': f'{Config.DOWNLOAD_PATH}/%(id)s.%(ext)s',
             # Brauzerni yanada aniqroq ko'rsatamiz
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
             'geo_bypass': True,
             'add_header': [
                 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
                 'Accept-Language: en-US,en;q=0.9',
+                'Sec-Fetch-Dest: document',
                 'Sec-Fetch-Mode: navigate',
+                'Sec-Fetch-Site: none',
+                'Sec-Fetch-User: ?1',
+                'Upgrade-Insecure-Requests: 1',
             ],
             'wait_for_video': (5, 10), # Instagram yuklanishini kutish
         }
-        if os.path.exists('cookies.txt'):
-            self.common_opts['cookiefile'] = 'cookies.txt'
+        # Cookies faylini tekshirish (cookies.txt yoki Cookie.txt)
+        cookie_file = 'cookies.txt' if os.path.exists('cookies.txt') else ('Cookie.txt' if os.path.exists('Cookie.txt') else None)
+        
+        if cookie_file:
+            self.common_opts['cookiefile'] = cookie_file
+        else:
+            # Instagram uchun cookies juda muhim. Agar cookies.txt bo'lmasa, 
+            # brauzerdan cookies olishga harakat qilamiz (lokal test uchun).
+            try:
+                self.common_opts['cookiesfrombrowser'] = ('chrome', 'edge', 'firefox', 'safari')
+                logging.info("Cookies fayli topilmadi, brauzerdan cookies olishga urinib ko'ramiz.")
+            except Exception as e:
+                logging.warning(f"Brauzerdan cookies olishda xatolik: {e}")
 
     def _get_proxy(self) -> Optional[str]:
         if not Config.USE_PROXY:
