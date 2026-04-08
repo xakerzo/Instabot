@@ -21,7 +21,8 @@ def is_admin(user_id: int):
 
 @router.message(Command("admin"))
 async def cmd_admin(message: types.Message):
-    if not is_admin(message.from_user.id): return
+    if not is_admin(message.from_user.id):
+        return await message.answer(f"❌ Kechirasiz, siz admin emassiz. Sizning ID: {message.from_user.id}\n\nUshbu IDni Railway'dagi ADMIN_IDS o'zgaruvchisiga qo'shing.")
     await message.answer("🛠 Admin panelga xush kelibsiz:", reply_markup=admin_main_keyboard())
 
 @router.callback_query(F.data == "admin_back")
