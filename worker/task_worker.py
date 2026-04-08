@@ -46,8 +46,7 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
         if sent_msg and sent_msg.video:
             file_id = sent_msg.video.file_id
             builder = InlineKeyboardBuilder()
-            # url_hash ishlatamiz (xavfsiz)
-            builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data=f"save:{url_hash}"))
+            # Faqat guruhga qo'shish tugmasi qoldi
             builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
             
             await bot.edit_message_reply_markup(
@@ -62,14 +61,14 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
         await bot.delete_message(chat_id=user_id, message_id=message_id)
 
     except Exception as e:
-        # Xatolikni userga yuborish
         error_msg = str(e)
         if "empty media response" in error_msg.lower():
             error_msg = "❌ Kechirasiz, bu video yopiq profilga tegishli yoki Instagram kirishni rad etdi. Bot faqat ochiq videolarni yuklay oladi."
         
         await bot.send_message(user_id, f"❌ Xatolik yuz berdi:\n\n{error_msg}", parse_mode="HTML")
         if message_id:
-            await bot.delete_message(chat_id=user_id, message_id=message_id)
+            try: await bot.delete_message(chat_id=user_id, message_id=message_id)
+            except: pass
 
 class WorkerSettings:
     functions = [download_task]

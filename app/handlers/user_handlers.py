@@ -71,8 +71,6 @@ async def handle_message(message: types.Message):
             caption_text += f"\n\n{extra_caption}"
 
         builder = InlineKeyboardBuilder()
-        # file_id o'rniga url_hash ishlatamiz (xavfsiz va qisqa)
-        builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data=f"save:{url_hash}")) 
         builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
 
         return await message.reply_video(
@@ -93,21 +91,6 @@ async def check_sub_btn(callback: types.CallbackQuery):
     else:
         await callback.message.delete()
         await callback.message.answer("✅ Raxmat! Endi Instagram linkini yuborishingiz mumkin.")
-
-@router.callback_query(F.data.startswith("save:"))
-async def handle_save_callback(callback: types.CallbackQuery):
-    url_hash = callback.data.split(":")[1]
-    # Keshdan topamiz
-    cached = await get_from_cache(url_hash)
-    if not cached:
-         return await callback.answer("❌ Xatolik: Video keshdan topilmadi.", show_alert=True)
-         
-    await callback.bot.copy_message(
-        chat_id=callback.from_user.id,
-        from_chat_id=callback.message.chat.id,
-        message_id=callback.message.message_id
-    )
-    await callback.answer("📂 Saqlash uchun ushbu xabarni Forward qiling!", show_alert=True)
 
 @router.callback_query(F.data == "cached")
 async def handle_cached_callback(callback: types.CallbackQuery):
