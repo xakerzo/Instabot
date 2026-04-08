@@ -25,7 +25,6 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
 
         await bot.edit_message_text("⏳ Yuklanmoqda...", chat_id=user_id, message_id=message_id)
         
-        # Faqat video yuklaymiz
         result = await downloader.download(url, 'video')
         file_path = result['file_path']
         
@@ -33,13 +32,16 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
         
         input_file = types.FSInputFile(file_path)
         
-        # Tugmalar: faqat Saqlash va Guruhga qo'shish
+        # Admin tomonidan qo'shilgan caption'ni olish
+        extra_caption = await database.get_setting('custom_caption', "")
+        caption_text = f"❤️ @{bot_username} orqali yuklab olindi 🚀 📩"
+        if extra_caption:
+            caption_text += f"\n\n{extra_caption}"
+
         builder = InlineKeyboardBuilder()
         builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data="cached"))
         builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
         
-        caption_text = f"❤️ @{bot_username} orqali yuklab olindi 🚀 📩"
-
         sent_msg = await bot.send_video(
             chat_id=user_id,
             video=input_file,
@@ -47,7 +49,6 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
             reply_markup=builder.as_markup()
         )
 
-        # Keshga saqlash
         if sent_msg and sent_msg.video:
             await database.add_to_cache(url_hash, sent_msg.video.file_id, 'video', os.path.getsize(file_path), original_url=url)
 
