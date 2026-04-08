@@ -13,17 +13,20 @@ class Config:
     REDIS_PASSWORD = os.getenv("REDISPASSWORD", os.getenv("REDIS_PASSWORD"))
     
     DB_URL = os.getenv("DB_URL", "sqlite+aiosqlite:///./data/bot.db")
-    
     DOWNLOAD_PATH = os.getenv("DOWNLOAD_PATH", "./downloads")
     
-    # Instagram Cookies (Railway-dan o'qiladi)
     INSTAGRAM_COOKIES = os.getenv("INSTAGRAM_COOKIES")
     
     MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", 50))
     USE_PROXY = os.getenv("USE_PROXY", "False").lower() == "true"
     PROXY_LIST_PATH = os.getenv("PROXY_LIST_PATH", "./proxies.txt")
-
     CACHE_TTL = 3600 * 24 * 7 
+
+# Kukilarni darhol faylga yozib qo'yamiz (Worker ko'rishi uchun)
+if Config.INSTAGRAM_COOKIES:
+    with open('cookies.txt', 'w') as f:
+        f.write(Config.INSTAGRAM_COOKIES)
+    print("✅ Instagram Cookies fayli yaratildi.")
 
 os.makedirs(Config.DOWNLOAD_PATH, exist_ok=True)
 os.makedirs("./data", exist_ok=True)
