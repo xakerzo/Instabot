@@ -1,4 +1,4 @@
-from aiogram import Router, F, types
+from aiogram import Router, F, types, Bot # Bot qo'shildi
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from arq import create_pool
@@ -16,7 +16,7 @@ async def get_redis():
         return await create_pool(RedisSettings.from_dsn(Config.REDIS_URL))
     return await create_pool(RedisSettings(host=Config.REDIS_HOST, port=Config.REDIS_PORT, password=Config.REDIS_PASSWORD))
 
-async def check_subscription(user_id: int, bot: types.Bot):
+async def check_subscription(user_id: int, bot: Bot): # types.Bot -> Bot bo'ldi
     channels = await get_channels()
     not_subscribed = []
     for ch in channels:
@@ -46,14 +46,15 @@ async def handle_message(message: types.Message):
         if message.chat.type in ['group', 'supergroup']: return
         return await message.answer("❌ Bu Instagram linki emas!")
 
-    # Majburiy obuna tekshiruvi
-    not_subscribed = await check_subscription(message.from_user.id, message.bot)
-    if not_subscribed:
-        builder = InlineKeyboardBuilder()
-        for ch in not_subscribed:
-            builder.row(types.InlineKeyboardButton(text=ch.title, url=ch.url))
-        builder.row(types.InlineKeyboardButton(text="✅ Obuna bo'ldim", callback_data="check_sub"))
-        return await message.answer("❌ Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:", reply_markup=builder.as_markup())
+    # Admin xabari emasligini tekshirish (agar admin link tashlasa ham tekshiruvdan o'tishi uchun)
+    if not message.from_user.id in Config.ADMIN_IDS:
+        not_subscribed = await check_subscription(message.from_user.id, message.bot)
+        if not_subscribed:
+            builder = InlineKeyboardBuilder()
+            for ch in not_subscribed:
+                builder.row(types.InlineKeyboardButton(text=ch.title, url=ch.url))
+            builder.row(types.InlineKeyboardButton(text="✅ Obuna bo'ldim", callback_data="check_sub"))
+            return await message.answer("❌ Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:", reply_markup=builder.as_markup())
 
     await add_user(message.from_user.id, message.from_user.username)
     await increment_stats()
@@ -65,7 +66,6 @@ async def handle_message(message: types.Message):
         bot_user = await message.bot.get_me()
         bot_username = bot_user.username
         
-        # Admin caption
         extra_caption = await get_setting('custom_caption', "")
         caption_text = f"❤️ @{bot_username} orqali yuklab olindi 🚀 📩"
         if extra_caption:
