@@ -37,18 +37,17 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
         if extra_caption:
             caption_text += f"\n\n{extra_caption}"
 
-        # Videoni yuborish
         sent_msg = await bot.send_video(
             chat_id=user_id,
             video=input_file,
             caption=caption_text
         )
         
-        # Tugmalar (file_id olgandan keyin ularni qo'shamiz)
         if sent_msg and sent_msg.video:
             file_id = sent_msg.video.file_id
             builder = InlineKeyboardBuilder()
-            builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data=f"save:{file_id}"))
+            # url_hash ishlatamiz (xavfsiz)
+            builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data=f"save:{url_hash}"))
             builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
             
             await bot.edit_message_reply_markup(
@@ -57,16 +56,20 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
                 reply_markup=builder.as_markup()
             )
             
-            # Keshga saqlash
             await database.add_to_cache(url_hash, file_id, 'video', os.path.getsize(file_path), original_url=url)
 
         if os.path.exists(file_path): os.remove(file_path)
         await bot.delete_message(chat_id=user_id, message_id=message_id)
 
     except Exception as e:
+        # Xatolikni userga yuborish
         error_msg = str(e)
-        print(f"Worker Error: {traceback.format_exc()}")
-        await bot.send_message(user_id, f"❌ Xatolik yuz berdi:\n<code>{error_msg}</code>", parse_mode="HTML")
+        if "empty media response" in error_msg.lower():
+            error_msg = "❌ Kechirasiz, bu video yopiq profilga tegishli yoki Instagram kirishni rad etdi. Bot faqat ochiq videolarni yuklay oladi."
+        
+        await bot.send_message(user_id, f"❌ Xatolik yuz berdi:\n\n{error_msg}", parse_mode="HTML")
+        if message_id:
+            await bot.delete_message(chat_id=user_id, message_id=message_id)
 
 class WorkerSettings:
     functions = [download_task]

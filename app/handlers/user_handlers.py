@@ -71,7 +71,8 @@ async def handle_message(message: types.Message):
             caption_text += f"\n\n{extra_caption}"
 
         builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data=f"save:{cached.file_id}")) # file_id qo'shildi
+        # file_id o'rniga url_hash ishlatamiz (xavfsiz va qisqa)
+        builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data=f"save:{url_hash}")) 
         builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
 
         return await message.reply_video(
@@ -95,14 +96,18 @@ async def check_sub_btn(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("save:"))
 async def handle_save_callback(callback: types.CallbackQuery):
-    file_id = callback.data.split(":")[1]
-    # Videoni userga qayta yuboramiz (Forward emas, barchasi bilan birga copy)
+    url_hash = callback.data.split(":")[1]
+    # Keshdan topamiz
+    cached = await get_from_cache(url_hash)
+    if not cached:
+         return await callback.answer("❌ Xatolik: Video keshdan topilmadi.", show_alert=True)
+         
     await callback.bot.copy_message(
         chat_id=callback.from_user.id,
         from_chat_id=callback.message.chat.id,
         message_id=callback.message.message_id
     )
-    await callback.answer("📂 Videoni o'zingizga (Saved Messages) saqlash uchun tepada chiqqan xabarni Forward qiling!", show_alert=True)
+    await callback.answer("📂 Saqlash uchun ushbu xabarni Forward qiling!", show_alert=True)
 
 @router.callback_query(F.data == "cached")
 async def handle_cached_callback(callback: types.CallbackQuery):
