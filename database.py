@@ -31,7 +31,7 @@ class MediaCache(Base):
     file_size: Mapped[int] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-async def init_db():
+async def init_db(ctx=None):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
