@@ -25,31 +25,31 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
 
         await bot.edit_message_text("⏳ Yuklanmoqda...", chat_id=user_id, message_id=message_id)
         
-        result = await downloader.download(url, mode)
+        # Faqat video yuklaymiz
+        result = await downloader.download(url, 'video')
         file_path = result['file_path']
         
         await bot.edit_message_text("📤 Botga yuborilmoqda...", chat_id=user_id, message_id=message_id)
         
         input_file = types.FSInputFile(file_path)
         
+        # Tugmalar: faqat Saqlash va Guruhga qo'shish
         builder = InlineKeyboardBuilder()
-        if mode == 'video':
-            builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data="none"))
-            builder.row(types.InlineKeyboardButton(text="📩 Qo'shiqni yuklab olish", callback_data=f"dl:audio:{url_hash}"))
-            builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
+        builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data="cached"))
+        builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
         
         caption_text = f"❤️ @{bot_username} orqali yuklab olindi 🚀 📩"
 
-        sent_msg = None
-        if mode == 'audio':
-            sent_msg = await bot.send_audio(chat_id=user_id, audio=input_file, title=result['title'], caption=caption_text)
-        else:
-            sent_msg = await bot.send_video(chat_id=user_id, video=input_file, caption=caption_text, reply_markup=builder.as_markup())
+        sent_msg = await bot.send_video(
+            chat_id=user_id,
+            video=input_file,
+            caption=caption_text,
+            reply_markup=builder.as_markup()
+        )
 
-        # Keshga saqlash (file_id va original_url bilan)
-        if sent_msg:
-            f_id = sent_msg.video.file_id if mode == 'video' else sent_msg.audio.file_id
-            await database.add_to_cache(url_hash, f_id, mode, os.path.getsize(file_path), original_url=url)
+        # Keshga saqlash
+        if sent_msg and sent_msg.video:
+            await database.add_to_cache(url_hash, sent_msg.video.file_id, 'video', os.path.getsize(file_path), original_url=url)
 
         if os.path.exists(file_path): os.remove(file_path)
         await bot.delete_message(chat_id=user_id, message_id=message_id)

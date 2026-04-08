@@ -41,41 +41,22 @@ async def handle_message(message: types.Message):
     url_hash = DownloaderService.get_url_hash(url)
     
     cached = await get_from_cache(url_hash)
-    if cached:
+    if cached and cached.file_type == 'video':
         bot_user = await message.bot.get_me()
         bot_username = bot_user.username
         builder = InlineKeyboardBuilder()
         builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data="cached"))
-        builder.row(types.InlineKeyboardButton(text="📩 Qo'shiqni yuklab olish", callback_data=f"dl:audio:{url_hash}"))
         builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
 
-        if cached.file_type == 'video':
-            return await message.reply_video(
-                cached.file_id, 
-                caption=f"❤️ @{bot_username} orqali yuklab olindi 🚀 📩",
-                reply_markup=builder.as_markup()
-            )
+        return await message.reply_video(
+            cached.file_id, 
+            caption=f"❤️ @{bot_username} orqali yuklab olindi 🚀 📩",
+            reply_markup=builder.as_markup()
+        )
 
     wait_msg = await message.answer("⏳ Navbatga qo'shildi...")
     redis = await get_redis()
     await redis.enqueue_job('download_task', message.chat.id, url, 'video', wait_msg.message_id)
-
-@router.callback_query(F.data.startswith("dl:"))
-async def handle_callback(callback: types.CallbackQuery):
-    _, mode, url_hash = callback.data.split(":")
-    
-    # Bazadan original URLni topish
-    cached = await get_from_cache(url_hash)
-    if not cached or not cached.original_url:
-        return await callback.answer("❌ Video manzili topilmadi. Iltimos, linkni qayta yuboring.", show_alert=True)
-    
-    url = cached.original_url
-    
-    await callback.answer("⏳ MP3 tayyorlanmoqda, bu bir oz vaqt olishi mumkin...", show_alert=False)
-    
-    wait_msg = await callback.message.answer("🎵 Qo'shiq yuklanmoqda...")
-    redis = await get_redis()
-    await redis.enqueue_job('download_task', callback.message.chat.id, url, 'audio', wait_msg.message_id)
 
 @router.callback_query(F.data == "cached")
 async def handle_cached_callback(callback: types.CallbackQuery):
