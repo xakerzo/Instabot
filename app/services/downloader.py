@@ -13,15 +13,19 @@ class DownloaderService:
             'nocheckcertificate': True,
             'noplaylist': True,
             'outtmpl': f'{Config.DOWNLOAD_PATH}/%(id)s.%(ext)s',
-            # User-Agent-ni haqiqiy brauzerga o'xshatish
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'add_header': [
+                'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language: en-US,en;q=0.9',
+            ],
+            'geo_bypass': True,
         }
         
-        # Agar cookies.txt bo'lsa, uni ishlatish
         if os.path.exists('cookies.txt'):
             self.common_opts['cookiefile'] = 'cookies.txt'
         
     def _get_proxy(self) -> Optional[str]:
+        # Agar Railway'da USE_PROXY=True bo'lmasa, proksilar ishlamaydi
         if not Config.USE_PROXY:
             return None
         if os.path.exists(Config.PROXY_LIST_PATH):
@@ -49,10 +53,13 @@ class DownloaderService:
 
         proxy = self._get_proxy()
         if proxy:
+            # SOCKS5 va HTTP proksilarni qo'llab-quvvatlash uchun
             opts['proxy'] = proxy
 
         loop = asyncio.get_event_loop()
         with yt_dlp.YoutubeDL(opts) as ydl:
+            # Instagram uchun qayta urinuvlar sonini oshiramiz
+            ydl.params['retries'] = 5
             info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=True))
             
             file_path = ydl.prepare_filename(info)
