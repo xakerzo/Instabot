@@ -1,13 +1,28 @@
 import re
+from typing import Optional
 
-def extract_instagram_url(text: str) -> str:
+INSTAGRAM_REGEX = re.compile(
+    r'(https?://(?:www\.)?(?:instagram\.com|instagr\.am)/(?:p|reel|reels|tv|stories|share/(?:p|reel)?)/[A-Za-z0-9_.-]+)',
+    re.IGNORECASE
+)
+
+def extract_instagram_url(text: str) -> Optional[str]:
     """
-    Matn ichidan Instagram linkini ajratib oladi.
+    Matn ichidan Instagram linkini ajratib oladi va tozalaydi.
     """
-    pattern = r'(https?://(?:www\.)?instagram\.com/(?:p|reels|reel|tv)/[A-Za-z0-9_-]+)'
-    match = re.search(pattern, text)
+    if not text:
+        return None
+    match = INSTAGRAM_REGEX.search(text.strip())
     if match:
-        return match.group(1)
+        url = match.group(1)
+        # /share/reel/CODE yoki /share/CODE larni standart formatga keltirish
+        if "/share/reel/" in url:
+            url = url.replace("/share/reel/", "/reel/")
+        elif "/share/p/" in url:
+            url = url.replace("/share/p/", "/p/")
+        elif "/reels/" in url:
+            url = url.replace("/reels/", "/reel/")
+        return url
     return None
 
 def is_instagram_url(url: str) -> bool:

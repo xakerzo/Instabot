@@ -1,78 +1,197 @@
 import os
 import asyncio
-import traceback
-from arq import create_pool
+import logging
+from typing import List, Optional
 from arq.connections import RedisSettings
 from aiogram import Bot, types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from config import Config
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+
+from config import Config, setup_environment
 from app.services.downloader import DownloaderService
+from app.utils.video_processor import compress_video
 import database
 
-def get_redis_settings():
+def get_redis_settings() -> RedisSettings:
     if Config.REDIS_URL:
         return RedisSettings.from_dsn(Config.REDIS_URL)
-    return RedisSettings(host=Config.REDIS_HOST, port=Config.REDIS_PORT, password=Config.REDIS_PASSWORD)
+    return RedisSettings(
+        host=Config.REDIS_HOST,
+        port=Config.REDIS_PORT,
+        password=Config.REDIS_PASSWORD
+    )
 
-bot = Bot(token=Config.BOT_TOKEN)
-downloader = DownloaderService()
-
-async def download_task(ctx, user_id: int, url: str, mode: str = 'video', message_id: int = None):
+async def download_task(ctx, user_id: int, url: str, mode: str = 'video', message_id: Optional[int] = None):
+    bot: Bot = ctx.get('bot') or Bot(token=Config.BOT_TOKEN)
+    downloader: DownloaderService = ctx.get('downloader') or DownloaderService()
+    
     url_hash = downloader.get_url_hash(url)
+    files_to_clean: List[str] = []
+    
     try:
+        # Xabar holatini yangilash
+        if message_id:
+            try:
+                await bot.edit_message_text("⏳ Yuklanmoqda...", chat_id=user_id, message_id=message_id)
+            except TelegramBadRequest:
+                pass
+
         bot_user = await bot.get_me()
         bot_username = bot_user.username
 
-        await bot.edit_message_text("⏳ Yuklanmoqda...", chat_id=user_id, message_id=message_id)
-        
+        # Media yuklash
         result = await downloader.download(url, mode)
-        file_path = result['file_path']
-        
-        await bot.edit_message_text("📤 Botga yuborilmoqda...", chat_id=user_id, message_id=message_id)
-        
-        input_file = types.FSInputFile(file_path)
-        
+        for f in result.get('files', []):
+            if f and f not in files_to_clean:
+                files_to_clean.append(f)
+
+        if message_id:
+            try:
+                await bot.edit_message_text("📤 Botga yuborilmoqda...", chat_id=user_id, message_id=message_id)
+            except TelegramBadRequest:
+                pass
+
         extra_caption = await database.get_setting('custom_caption', "")
         caption_text = f"❤️ @{bot_username} orqali yuklab olindi 🚀 📩"
         if extra_caption:
             caption_text += f"\n\n{extra_caption}"
 
-        sent_msg = await bot.send_video(
-            chat_id=user_id,
-            video=input_file,
-            caption=caption_text
-        )
-        
-        if sent_msg and sent_msg.video:
-            file_id = sent_msg.video.file_id
-            builder = InlineKeyboardBuilder()
-            # Faqat guruhga qo'shish tugmasi qoldi
-            builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
-            
-            await bot.edit_message_reply_markup(
-                chat_id=user_id,
-                message_id=sent_msg.message_id,
-                reply_markup=builder.as_markup()
-            )
-            
-            await database.add_to_cache(url_hash, file_id, 'video', os.path.getsize(file_path), original_url=url)
+        builder = InlineKeyboardBuilder()
+        builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
+        markup = builder.as_markup()
 
-        if os.path.exists(file_path): os.remove(file_path)
-        await bot.delete_message(chat_id=user_id, message_id=message_id)
+        media_type = result.get('type', 'video')
+
+        if media_type == 'video':
+            file_path = result['file_path']
+            file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+
+            # Agar 50MB dan katta bo'lsa, siqish
+            if file_size > Config.MAX_FILE_SIZE_MB * 1024 * 1024:
+                if message_id:
+                    try:
+                        await bot.edit_message_text("⏳ Video hajmi katta, sifat saqlangan holda siqilmoqda...", chat_id=user_id, message_id=message_id)
+                    except TelegramBadRequest:
+                        pass
+                
+                compressed_path = compress_video(file_path, Config.MAX_FILE_SIZE_MB)
+                if compressed_path != file_path:
+                    files_to_clean.append(compressed_path)
+                    file_path = compressed_path
+                    file_size = os.path.getsize(file_path)
+
+            if file_size > 50 * 1024 * 1024:
+                await bot.send_message(user_id, "⚠️ Video hajmi Telegram limitidan (50MB) katta bo'lgani uchun yuborib bo'lmadi.")
+                return
+
+            sent_msg = await bot.send_video(
+                chat_id=user_id,
+                video=types.FSInputFile(file_path),
+                caption=caption_text,
+                reply_markup=markup
+            )
+            if sent_msg and sent_msg.video:
+                await database.add_to_cache(url_hash, sent_msg.video.file_id, 'video', file_size, original_url=url)
+
+        elif media_type == 'photo':
+            file_path = result['file_path']
+            file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+            sent_msg = await bot.send_photo(
+                chat_id=user_id,
+                photo=types.FSInputFile(file_path),
+                caption=caption_text,
+                reply_markup=markup
+            )
+            if sent_msg and sent_msg.photo:
+                await database.add_to_cache(url_hash, sent_msg.photo[-1].file_id, 'photo', file_size, original_url=url)
+
+        elif media_type == 'album':
+            items = result.get('items', [])
+            media_group = []
+            for idx, item in enumerate(items):
+                cap = caption_text if idx == 0 else None
+                f_path = item['path']
+                if item['type'] == 'video':
+                    if os.path.getsize(f_path) > Config.MAX_FILE_SIZE_MB * 1024 * 1024:
+                        comp_path = compress_video(f_path, Config.MAX_FILE_SIZE_MB)
+                        if comp_path != f_path:
+                            files_to_clean.append(comp_path)
+                            f_path = comp_path
+                    media_group.append(types.InputMediaVideo(media=types.FSInputFile(f_path), caption=cap))
+                else:
+                    media_group.append(types.InputMediaPhoto(media=types.FSInputFile(f_path), caption=cap))
+            
+            if media_group:
+                # Telegram birdaniga ko'pi bilan 10 ta media yuborishga ruxsat beradi
+                chunks = [media_group[i:i + 10] for i in range(0, len(media_group), 10)]
+                for chunk in chunks:
+                    await bot.send_media_group(chat_id=user_id, media=chunk)
+                await bot.send_message(chat_id=user_id, text=f"❤️ @{bot_username} orqali yuklab olindi 🚀", reply_markup=markup)
+
+        elif media_type == 'audio':
+            file_path = result['file_path']
+            file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+            sent_msg = await bot.send_audio(
+                chat_id=user_id,
+                audio=types.FSInputFile(file_path),
+                caption=caption_text,
+                title=result.get('title', 'Audio'),
+                reply_markup=markup
+            )
+            if sent_msg and sent_msg.audio:
+                await database.add_to_cache(url_hash, sent_msg.audio.file_id, 'audio', file_size, original_url=url)
+
+        # Muvaffaqiyatli yuklanganda statistika oshiriladi
+        await database.increment_stats('total_downloads')
 
     except Exception as e:
         error_msg = str(e)
-        if "empty media response" in error_msg.lower():
-            error_msg = "❌ Kechirasiz, bu video yopiq profilga tegishli yoki Instagram kirishni rad etdi. Bot faqat ochiq videolarni yuklay oladi."
-        elif "rate-limit" in error_msg.lower() or "login required" in error_msg.lower() or "not available" in error_msg.lower():
-            error_msg = "⚠️ <b>Instagram cheklovi yuz berdi!</b>\n\nInstagram botni blokladi yoki login talab qilmoqda. \n\n<b>Echimi:</b>\n1. Brauzeringizda Instagramga kiring\n2. Cookies-ni 'cookies.txt' fayliga eksport qiling va bot papkasiga tashlang.\n3. Yoki biroz kutib qayta urinib ko'ring."
+        logging.error(f"Download task error for {url}: {error_msg}")
         
-        await bot.send_message(user_id, f"❌ Xatolik yuz berdi:\n\n{error_msg}", parse_mode="HTML")
+        user_message = "❌ Yuklab olishda xatolik yuz berdi."
+        if "empty media response" in error_msg.lower() or "private" in error_msg.lower():
+            user_message = "❌ Bu post yopiq (private) profilga tegishli yoki o'chirib tashlangan. Bot faqat ochiq postlarni yuklay oladi."
+        elif "rate-limit" in error_msg.lower() or "login required" in error_msg.lower():
+            user_message = "⚠️ Instagram cheklovi yuz berdi. Iltimos, birozdan so'ng qayta urinib ko'ring yoki botga yangilangan cookies taqdim eting."
+        elif "file is too big" in error_msg.lower():
+            user_message = "⚠️ Fayl hajmi juda katta bo'lgani uchun uni Telegram orqali yuborib bo'lmadi."
+
+        try:
+            await bot.send_message(user_id, user_message)
+        except Exception:
+            pass
+
+    finally:
+        # Vaqtinchalik fayllarni diskdan 100% tozalash
+        for f in files_to_clean:
+            if f and os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception as ex:
+                    logging.warning(f"Faylni o'chirishda xatolik ({f}): {ex}")
+                    
+        # Kutilayotgan xabarni o'chirish
         if message_id:
-            try: await bot.delete_message(chat_id=user_id, message_id=message_id)
-            except: pass
+            try:
+                await bot.delete_message(chat_id=user_id, message_id=message_id)
+            except Exception:
+                pass
+
+async def startup(ctx):
+    setup_environment()
+    await database.init_db()
+    ctx['bot'] = Bot(token=Config.BOT_TOKEN)
+    ctx['downloader'] = DownloaderService()
+    logging.info("Worker muvaffaqiyatli ishga tushdi")
+
+async def shutdown(ctx):
+    bot: Bot = ctx.get('bot')
+    if bot:
+        await bot.session.close()
+    logging.info("Worker to'xtatildi")
 
 class WorkerSettings:
     functions = [download_task]
     redis_settings = get_redis_settings()
-    on_startup = database.init_db
+    on_startup = startup
+    on_shutdown = shutdown

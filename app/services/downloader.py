@@ -4,7 +4,7 @@ import os
 import hashlib
 import logging
 import random
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from config import Config
 
 class DownloaderService:
@@ -13,9 +13,7 @@ class DownloaderService:
             'quiet': True,
             'no_warnings': True,
             'nocheckcertificate': True,
-            'noplaylist': True,
-            'outtmpl': f'{Config.DOWNLOAD_PATH}/%(id)s.%(ext)s',
-            # Brauzerni yanada aniqroq ko'rsatamiz
+            'outtmpl': f'{Config.DOWNLOAD_PATH}/%(id)s%(playlist_index&_|)s%(playlist_index|)s.%(ext)s',
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
             'geo_bypass': True,
             'add_header': [
@@ -27,19 +25,16 @@ class DownloaderService:
                 'Sec-Fetch-User: ?1',
                 'Upgrade-Insecure-Requests: 1',
             ],
-            'wait_for_video': (1, 3), # Instagram yuklanishini kutish vaqtini kamaytirdik
+            'wait_for_video': (1, 3),
         }
-        # Cookies faylini tekshirish (cookies.txt yoki Cookie.txt)
-        cookie_file = 'cookies.txt' if os.path.exists('cookies.txt') else ('Cookie.txt' if os.path.exists('Cookie.txt') else None)
         
+        # Cookies faylini tekshirish
+        cookie_file = 'cookies.txt' if os.path.exists('cookies.txt') else ('Cookie.txt' if os.path.exists('Cookie.txt') else None)
         if cookie_file:
             self.common_opts['cookiefile'] = cookie_file
         else:
-            # Instagram uchun cookies juda muhim. Agar cookies.txt bo'lmasa, 
-            # brauzerdan cookies olishga harakat qilamiz (lokal test uchun).
             try:
                 self.common_opts['cookiesfrombrowser'] = ('chrome', 'edge', 'firefox', 'safari')
-                logging.info("Cookies fayli topilmadi, brauzerdan cookies olishga urinib ko'ramiz.")
             except Exception as e:
                 logging.warning(f"Brauzerdan cookies olishda xatolik: {e}")
 
@@ -47,50 +42,87 @@ class DownloaderService:
         if not Config.USE_PROXY:
             return None
         if os.path.exists(Config.PROXY_LIST_PATH):
-            with open(Config.PROXY_LIST_PATH, 'r') as f:
+            with open(Config.PROXY_LIST_PATH, 'r', encoding='utf-8') as f:
                 proxies = [l.strip() for l in f.readlines() if l.strip() and not l.startswith('#')]
                 if proxies:
                     return random.choice(proxies)
         return None
 
     async def download(self, url: str, mode: str = 'video') -> Dict[str, Any]:
-        # Har safar yangi proksi yoki proksisiz urinish
         proxy = self._get_proxy()
         
         if mode == 'audio':
             return await self._download_full_audio(url, proxy)
         
-        return await self._download_video(url, proxy)
+        return await self._download_media(url, proxy)
 
-    async def _download_video(self, url: str, proxy: str = None) -> Dict[str, Any]:
+    async def _download_media(self, url: str, proxy: Optional[str] = None) -> Dict[str, Any]:
         opts = self.common_opts.copy()
-        opts['format'] = 'best[ext=mp4]/best'
+        opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
         if proxy:
             opts['proxy'] = proxy
         
         loop = asyncio.get_event_loop()
         with yt_dlp.YoutubeDL(opts) as ydl:
-            # So'rov oldidan biroz kutishni kamaytirdik
-            # await asyncio.sleep(random.uniform(1, 3))
             info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+            
+            # Karusel (bir nechta rasm/video) mavjudligini tekshirish
+            entries = info.get('entries')
+            if entries:
+                valid_entries = [e for e in entries if e]
+                if len(valid_entries) > 1:
+                    items = []
+                    all_files = []
+                    for entry in valid_entries:
+                        fpath = ydl.prepare_filename(entry)
+                        if not os.path.exists(fpath):
+                            reqs = entry.get('requested_downloads')
+                            if reqs and len(reqs) > 0 and os.path.exists(reqs[0].get('filepath', '')):
+                                fpath = reqs[0]['filepath']
+                        
+                        if os.path.exists(fpath):
+                            ext = os.path.splitext(fpath)[1].lower()
+                            item_type = 'video' if ext in ['.mp4', '.mov', '.mkv', '.webm'] else 'photo'
+                            items.append({'path': fpath, 'type': item_type})
+                            all_files.append(fpath)
+                    
+                    if items:
+                        return {
+                            'type': 'album',
+                            'items': items,
+                            'files': all_files,
+                            'title': info.get('title', 'Instagram Post')
+                        }
+                elif len(valid_entries) == 1:
+                    info = valid_entries[0]
+
+            # Bitta fayl (video yoki rasm)
             file_path = ydl.prepare_filename(info)
+            if not os.path.exists(file_path):
+                reqs = info.get('requested_downloads')
+                if reqs and len(reqs) > 0 and os.path.exists(reqs[0].get('filepath', '')):
+                    file_path = reqs[0]['filepath']
+
+            ext = os.path.splitext(file_path)[1].lower() if file_path else ''
+            media_type = 'video' if ext in ['.mp4', '.mov', '.mkv', '.webm'] else 'photo'
+            file_size = os.path.getsize(file_path) if file_path and os.path.exists(file_path) else 0
+
             return {
+                'type': media_type,
                 'file_path': file_path,
-                'title': info.get('title', 'Video'),
+                'files': [file_path] if file_path else [],
+                'title': info.get('title', 'Instagram Media'),
                 'duration': info.get('duration', 0),
-                'file_size': os.path.getsize(file_path) if os.path.exists(file_path) else 0
+                'file_size': file_size
             }
 
-    async def _download_full_audio(self, url: str, proxy: str = None) -> Dict[str, Any]:
+    async def _download_full_audio(self, url: str, proxy: Optional[str] = None) -> Dict[str, Any]:
         loop = asyncio.get_event_loop()
-        
-        # Instagram-dan ma'lumot olish
         opts_info = self.common_opts.copy()
         if proxy:
             opts_info['proxy'] = proxy
             
         with yt_dlp.YoutubeDL(opts_info) as ydl:
-            # await asyncio.sleep(random.uniform(1, 2))
             info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=False))
             
             track = info.get('track')
@@ -112,7 +144,6 @@ class DownloaderService:
                         'preferredquality': '192',
                     }],
                 })
-                # YouTube uchun proksi shart emas odatda
                 try:
                     with yt_dlp.YoutubeDL(opts_yt) as ydl_yt:
                         yt_info = await loop.run_in_executor(None, lambda: ydl_yt.extract_info(search_query, download=True))
@@ -121,15 +152,18 @@ class DownloaderService:
                             video_info = entries[0]
                             file_path = ydl_yt.prepare_filename(video_info)
                             file_path = os.path.splitext(file_path)[0] + ".mp3"
-                            return {
-                                'file_path': file_path,
-                                'title': f"{artist} - {track}" if track and artist else video_info.get('title'),
-                                'file_size': os.path.getsize(file_path) if os.path.exists(file_path) else 0
-                            }
+                            if os.path.exists(file_path):
+                                return {
+                                    'type': 'audio',
+                                    'file_path': file_path,
+                                    'files': [file_path],
+                                    'title': f"{artist} - {track}" if track and artist else video_info.get('title', 'Audio'),
+                                    'file_size': os.path.getsize(file_path)
+                                }
                 except Exception as e:
                     logging.warning(f"YouTube search failed: {e}")
 
-            # Fallback
+            # Fallback to direct Instagram audio extraction
             opts_orig = opts_info.copy()
             opts_orig.update({
                 'format': 'bestaudio/best',
@@ -144,7 +178,9 @@ class DownloaderService:
                 file_path = ydl_orig.prepare_filename(orig_info)
                 file_path = os.path.splitext(file_path)[0] + ".mp3"
                 return {
+                    'type': 'audio',
                     'file_path': file_path,
+                    'files': [file_path],
                     'title': orig_info.get('title', 'Audio'),
                     'file_size': os.path.getsize(file_path) if os.path.exists(file_path) else 0
                 }
