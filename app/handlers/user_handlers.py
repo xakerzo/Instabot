@@ -167,7 +167,16 @@ async def handle_message(message: types.Message, redis: ArqRedis):
             await remove_from_cache(url_hash)
 
     # Navbatga qo'shish (guruhda foydalanuvchining havolasiga javob (reply) qilib yuborishi uchun message.message_id uzatiladi)
-    wait_msg = await message.reply("⏳ Yuklanmoqda...")
+    try:
+        queue_size = await redis.zcard(redis.default_queue_name)
+    except Exception:
+        queue_size = 0
+
+    if queue_size > 0:
+        wait_msg = await message.reply(f"⏳ So'rovingiz navbatga olindi (Sizdan oldin: {queue_size} ta so'rov)...")
+    else:
+        wait_msg = await message.reply("⏳ Yuklanmoqda...")
+
     await redis.enqueue_job(
         'download_task',
         message.chat.id,
@@ -267,7 +276,13 @@ async def handle_audio_download(callback: types.CallbackQuery, redis: ArqRedis):
             caption=f"❤️ @{bot_user.username} orqali yuklab olindi 🚀"
         )
         
-    await status_msg.edit_text("🎵 Video audiosi yuklanmoqda...")
+    try:
+        queue_size = await redis.zcard(redis.default_queue_name)
+    except Exception:
+        queue_size = 0
+    wait_text = f"⏳ Navbatga olindi (Navbatda: {queue_size} ta)..." if queue_size > 0 else "🎵 Video audiosi yuklanmoqda..."
+    await status_msg.edit_text(wait_text)
+
     await redis.enqueue_job(
         'download_task',
         callback.message.chat.id,
@@ -278,7 +293,7 @@ async def handle_audio_download(callback: types.CallbackQuery, redis: ArqRedis):
     )
 
 @router.callback_query(F.data.startswith("yt_audio:"))
-async def handle_yt_audio_download(callback: types.CallbackQuery):
+async def handle_yt_audio_download(callback: types.CallbackQuery, redis: ArqRedis):
     yt_id = callback.data.split(":", 1)[1]
     cache_key = f"yt_{yt_id}"
     cached = await get_from_cache(cache_key)
@@ -290,48 +305,23 @@ async def handle_yt_audio_download(callback: types.CallbackQuery):
             caption=f"❤️ @{bot_user.username} orqali yuklab olindi 🚀"
         )
 
-    await callback.answer("⏳ Qo'shiq yuklanmoqda...")
-    wait_msg = await callback.message.reply("🎵 Audio yuklanmoqda...")
+    await callback.answer("⏳ So'rovingiz navbatga qo'yildi...")
 
-    music_service = MusicService()
-    res = await music_service.download_track(yt_id)
-    if not res or not os.path.exists(res['file_path']):
-        try:
-            await wait_msg.edit_text("❌ Musiqani yuklab bo'lmadi.")
-        except Exception:
-            pass
-        return
-
-    file_path = res['file_path']
     try:
-        bot_user = await callback.bot.get_me()
-        sent_audio = await callback.message.reply_audio(
-            types.FSInputFile(file_path),
-            title=res.get('title'),
-            performer=res.get('artist'),
-            caption=f"❤️ @{bot_user.username} orqali yuklab olindi 🚀"
-        )
-        if sent_audio and sent_audio.audio:
-            await add_to_cache(
-                cache_key,
-                sent_audio.audio.file_id,
-                'audio',
-                os.path.getsize(file_path),
-                original_url=f"https://www.youtube.com/watch?v={yt_id}"
-            )
-        await wait_msg.delete()
-    except Exception as ex:
-        logging.error(f"Audio yuborishda xatolik: {ex}")
-        try:
-            await wait_msg.edit_text("❌ Audioni yuborishda xatolik yuz berdi.")
-        except Exception:
-            pass
-    finally:
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
+        queue_size = await redis.zcard(redis.default_queue_name)
+    except Exception:
+        queue_size = 0
+
+    wait_text = f"⏳ Navbatga olindi (Navbatda: {queue_size} ta)..." if queue_size > 0 else "🎵 Audio yuklanmoqda..."
+    wait_msg = await callback.message.reply(wait_text)
+
+    await redis.enqueue_job(
+        'yt_audio_task',
+        callback.message.chat.id,
+        yt_id,
+        wait_msg.message_id,
+        callback.message.message_id
+    )
 
 @router.callback_query(F.data.startswith("show_vid:"))
 async def handle_show_video(callback: types.CallbackQuery):

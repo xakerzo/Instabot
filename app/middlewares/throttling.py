@@ -1,7 +1,9 @@
+import logging
 from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware, types
 from cachetools import TTLCache
 from config import Config
+from database import add_user
 from app.utils.validators import is_supported_url
 
 class ThrottlingMiddleware(BaseMiddleware):
@@ -21,6 +23,13 @@ class ThrottlingMiddleware(BaseMiddleware):
         user = getattr(event, 'from_user', None)
         if not user:
             return await handler(event, data)
+
+        # Shaxsiy chatdagi har bir foydalanuvchini avtomatik bazaga kiritish (Broadcast va statistika uchun)
+        if user.id > 0 and event.chat.type == 'private':
+            try:
+                await add_user(user.id, user.username)
+            except Exception as e:
+                logging.debug(f"Userni bazaga kiritishda xatolik ({user.id}): {e}")
 
         # Adminlarga throttling ta'sir qilmaydi
         if user.id in Config.ADMIN_IDS:

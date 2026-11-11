@@ -62,59 +62,108 @@ async def start_broadcast(callback: types.CallbackQuery, state: FSMContext):
     )
     await state.set_state(AdminStates.waiting_for_broadcast)
 
-@router.message(AdminStates.waiting_for_broadcast)
-async def perform_broadcast(message: types.Message, state: FSMContext):
-    await state.clear()
-    users = await database.get_all_users(only_active=True)
-    total = len(users)
-    
-    if total == 0:
-        return await message.answer("❌ Bazada foydalanuvchilar topilmadi.", reply_markup=back_to_admin_keyboard())
-
+async def execute_broadcast(bot, admin_chat_id: int, message: types.Message, users: list, wait_msg_id: int):
     sent = 0
     failed = 0
+    total = len(users)
     last_update_time = time.time()
-    wait_msg = await message.answer(f"⏳ Tarqatish boshlandi (0/{total})...")
     
     for idx, user_id in enumerate(users):
         try:
-            await message.copy_to(chat_id=user_id)
+            await message.copy_to(chat_id=user_id, reply_markup=message.reply_markup)
             sent += 1
         except TelegramRetryAfter as e:
-            await asyncio.sleep(e.retry_after)
+            await asyncio.sleep(e.retry_after + 1)
             try:
-                await message.copy_to(chat_id=user_id)
+                await message.copy_to(chat_id=user_id, reply_markup=message.reply_markup)
                 sent += 1
             except Exception:
                 failed += 1
-        except TelegramForbiddenError:
+        except (TelegramForbiddenError, TelegramBadRequest) as e:
             failed += 1
-            await database.set_user_active(user_id, False)
+            err_str = str(e).lower()
+            if "blocked" in err_str or "forbidden" in err_str or "deactivated" in err_str or "chat not found" in err_str:
+                await database.set_user_active(user_id, False)
         except Exception as e:
-            logging.debug(f"Broadcast failed for user {user_id}: {e}")
+            logging.warning(f"Broadcast failed for user {user_id}: {e}")
             failed += 1
 
-        # Har 3 soniyada xabarni yangilash (Flood control chekloviga tushmaslik uchun)
-        if time.time() - last_update_time > 3.0 or idx == total - 1:
+        # Har 4 soniyada xabarni yangilash (Telegram Flood limitiga tushmaslik uchun)
+        if time.time() - last_update_time > 4.0:
             last_update_time = time.time()
             try:
-                await wait_msg.edit_text(
-                    f"⏳ Tarqatilmoqda... ({idx + 1}/{total})\n\n"
-                    f"✅ Yetkazildi: {sent}\n"
-                    f"❌ Xatolik / Bloklagan: {failed}"
+                percent = int((idx + 1) / total * 100)
+                await bot.edit_message_text(
+                    f"📢 <b>Xabar tarqatilmoqda...</b> ({percent}%)\n\n"
+                    f"👥 Jami: <b>{total}</b> ta\n"
+                    f"✅ Yetkazildi: <b>{sent}</b> ta\n"
+                    f"🚫 Yetib bormadi: <b>{failed}</b> ta",
+                    chat_id=admin_chat_id,
+                    message_id=wait_msg_id,
+                    parse_mode="HTML"
                 )
             except Exception:
                 pass
         
-        await asyncio.sleep(0.04) # Sekundiga ~25-30 ta xabar yuborish
-        
-    await wait_msg.edit_text(
+        await asyncio.sleep(0.04) # Sekundiga ~25 ta xabar yuborish (Telegram tavsiyasi)
+
+    await asyncio.sleep(1.0)
+    report = (
         f"✅ <b>Tarqatish yakunlandi!</b>\n\n"
-        f"👥 Jami: {total}\n"
-        f"✅ Muvaffaqiyatli bordi: <b>{sent}</b>\n"
-        f"🚫 Yetib bormadi (bloklagan): <b>{failed}</b>",
-        parse_mode="HTML",
-        reply_markup=back_to_admin_keyboard()
+        f"👥 Jami qabul qiluvchilar: <b>{total}</b> ta\n"
+        f"✅ Muvaffaqiyatli yetkazildi: <b>{sent}</b> ta\n"
+        f"🚫 Yetib bormadi (bloklagan): <b>{failed}</b> ta"
+    )
+    try:
+        await bot.edit_message_text(
+            report,
+            chat_id=admin_chat_id,
+            message_id=wait_msg_id,
+            parse_mode="HTML",
+            reply_markup=back_to_admin_keyboard()
+        )
+    except Exception:
+        try:
+            await bot.send_message(
+                admin_chat_id,
+                report,
+                parse_mode="HTML",
+                reply_markup=back_to_admin_keyboard()
+            )
+        except Exception:
+            pass
+
+@router.message(AdminStates.waiting_for_broadcast)
+async def perform_broadcast(message: types.Message, state: FSMContext):
+    await state.clear()
+    users = await database.get_all_users(only_active=True)
+    valid_users = [u for u in users if u > 0]
+    total = len(valid_users)
+    
+    if total == 0:
+        return await message.answer(
+            "❌ <b>Bazada faol foydalanuvchilar topilmadi!</b>\n\n"
+            "<i>Foydalanuvchilar botga /start bosishi yoki media yuborishi bilan bazaga avtomatik qo'shiladi.</i>",
+            parse_mode="HTML",
+            reply_markup=back_to_admin_keyboard()
+        )
+
+    wait_msg = await message.answer(
+        f"🚀 <b>Xabar tarqatish boshlandi...</b>\n\n"
+        f"👥 Qabul qiluvchilar: <b>{total}</b> ta\n"
+        f"⏳ Jarayon ketmoqda, iltimos kuting...",
+        parse_mode="HTML"
+    )
+    
+    # Bot qotib qolmasligi uchun orqa fonda ishga tushirish
+    asyncio.create_task(
+        execute_broadcast(
+            bot=message.bot,
+            admin_chat_id=message.chat.id,
+            message=message,
+            users=valid_users,
+            wait_msg_id=wait_msg.message_id
+        )
     )
 
 @router.callback_query(F.data == "admin_caption")
@@ -164,8 +213,11 @@ async def list_channels(callback: types.CallbackQuery):
 @router.callback_query(F.data == "add_channel")
 async def add_ch_start(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
-        "1. Menga kanalning ID'sini yuboring (masalan: <code>-1001234567890</code>):\n\n"
-        "<i>Eslatma: Bot ushbu kanalda ADMIN bo'lishi shart!</i>",
+        "📢 <b>Kanal qo'shish:</b>\n\n"
+        "1. Kanalning <code>@username</code>ini yuboring (masalan: <code>@mening_kanalim</code>),\n"
+        "2. Kanal ID'sini kiriting (masalan: <code>-1001234567890</code>),\n"
+        "3. Yoki kanaldan biror xabarni shu yerga <b>Forward (uzatish)</b> qiling:\n\n"
+        "<i>⚠️ Eslatma: Bot ushbu kanalda ADMIN qilingan bo'lishi shart!</i>",
         parse_mode="HTML",
         reply_markup=back_to_admin_keyboard()
     )
@@ -173,13 +225,61 @@ async def add_ch_start(callback: types.CallbackQuery, state: FSMContext):
 
 @router.message(AdminStates.waiting_for_channel_id)
 async def add_ch_id(message: types.Message, state: FSMContext):
+    chat_id = None
+    suggested_title = None
+
+    if message.forward_from_chat:
+        chat_id = message.forward_from_chat.id
+        suggested_title = message.forward_from_chat.title
+    elif message.text:
+        raw = message.text.strip()
+        try:
+            # @username yoki ID orqali kanalni topish
+            chat = await message.bot.get_chat(raw)
+            chat_id = chat.id
+            suggested_title = chat.title
+        except Exception:
+            try:
+                chat_id = int(raw)
+            except ValueError:
+                pass
+
+    if not chat_id:
+        return await message.answer(
+            "❌ <b>Kanal aniqlanmadi!</b>\n\n"
+            "Iltimos, kanalning <code>@username</code>ini to'g'ri yozing, ID'sini kiriting yoki kanaldan biror xabarni Forward qiling:",
+            parse_mode="HTML"
+        )
+
+    # Bot kanalda adminligini tekshirish
     try:
-        chat_id = int(message.text.strip())
-        await state.update_data(id=chat_id)
+        bot_info = await message.bot.get_me()
+        member = await message.bot.get_chat_member(chat_id, bot_info.id)
+        if member.status not in ['administrator', 'creator']:
+            return await message.answer(
+                "⚠️ <b>Bot ushbu kanalda ADMIN emas!</b>\n\n"
+                "Iltimos, avval botni kanalingizga admin qilib tayinlang, so'ng qayta yuboring.",
+                parse_mode="HTML"
+            )
+    except Exception as e:
+        return await message.answer(
+            f"⚠️ <b>Kanal bilan bog'lanishda xatolik:</b>\n{e}\n\n"
+            "Bot kanalda admin qilinganligiga ishonch hosil qiling.",
+            parse_mode="HTML"
+        )
+
+    await state.update_data(id=chat_id)
+    if suggested_title:
+        await state.update_data(title=suggested_title)
+        await message.answer(
+            f"✅ Kanal muvaffaqiyatli aniqlandi: <b>{suggested_title}</b>\n\n"
+            f"Endi ushbu kanalga ulanish havolasini (link) yuboring (masalan: <code>https://t.me/...</code>):",
+            parse_mode="HTML"
+        )
+        await state.set_state(AdminStates.waiting_for_channel_url)
+    else:
         await message.answer("2. Kanalning nomini yuboring (tugmada chiqadigan matn):")
         await state.set_state(AdminStates.waiting_for_channel_title)
-    except ValueError:
-        await message.answer("❌ Noto'g'ri ID! Faqat butun son bo'lishi kerak (masalan: -1001234567890):")
 
 @router.message(AdminStates.waiting_for_channel_title)
 async def add_ch_title(message: types.Message, state: FSMContext):

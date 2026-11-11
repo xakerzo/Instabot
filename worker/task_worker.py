@@ -44,6 +44,13 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
         bot_user = await bot.get_me()
         bot_username = bot_user.username
 
+        # Agar navbatda turgan bo'lsa, yuklash boshlanganini bildirish
+        if message_id:
+            try:
+                await bot.edit_message_text("⏳ Yuklab olinmoqda...", chat_id=user_id, message_id=message_id)
+            except Exception:
+                pass
+
         # Tezkor media yuklash
         result = await downloader.download(url, mode)
         for f in result.get('files', []):
@@ -238,6 +245,82 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
             except Exception:
                 pass
 
+async def yt_audio_task(ctx, chat_id: int, yt_id: str, message_id: Optional[int] = None, reply_to_id: Optional[int] = None):
+    bot: Bot = ctx.get('bot') or Bot(token=Config.BOT_TOKEN)
+    cache_key = f"yt_{yt_id}"
+    
+    # 1. Keshni tekshirish
+    cached = await database.get_from_cache(cache_key)
+    if cached:
+        bot_user = await bot.get_me()
+        try:
+            await bot.send_audio(
+                chat_id=chat_id,
+                audio=cached.file_id,
+                caption=f"❤️ @{bot_user.username} orqali yuklab olindi 🚀",
+                reply_to_message_id=reply_to_id
+            )
+        except Exception:
+            pass
+        if message_id:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=message_id)
+            except Exception:
+                pass
+        return
+
+    # 2. Worker yuklab olishni boshladi
+    if message_id:
+        try:
+            await bot.edit_message_text("🎵 Audio yuklanmoqda...", chat_id=chat_id, message_id=message_id)
+        except Exception:
+            pass
+
+    from app.services.music_service import MusicService
+    music_service = MusicService()
+    res = await music_service.download_track(yt_id)
+    
+    if not res or not os.path.exists(res.get('file_path', '')):
+        if message_id:
+            try:
+                await bot.edit_message_text("❌ Musiqani yuklab bo'lmadi.", chat_id=chat_id, message_id=message_id)
+            except Exception:
+                pass
+        return
+
+    file_path = res['file_path']
+    try:
+        bot_user = await bot.get_me()
+        sent_audio = await bot.send_audio(
+            chat_id=chat_id,
+            audio=types.FSInputFile(file_path),
+            title=res.get('title'),
+            performer=res.get('artist'),
+            caption=f"❤️ @{bot_user.username} orqali yuklab olindi 🚀",
+            reply_to_message_id=reply_to_id
+        )
+        if sent_audio and sent_audio.audio:
+            await database.add_to_cache(
+                cache_key,
+                sent_audio.audio.file_id,
+                'audio',
+                os.path.getsize(file_path),
+                original_url=f"https://www.youtube.com/watch?v={yt_id}"
+            )
+    except Exception as ex:
+        logging.error(f"Audio yuborishda xatolik: {ex}")
+    finally:
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+        if message_id:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=message_id)
+            except Exception:
+                pass
+
 async def startup(ctx):
     setup_environment()
     await database.init_db()
@@ -254,7 +337,11 @@ async def shutdown(ctx):
     logging.info("Worker to'xtatildi")
 
 class WorkerSettings:
-    functions = [download_task]
+    functions = [download_task, yt_audio_task]
     redis_settings = get_redis_settings()
     on_startup = startup
     on_shutdown = shutdown
+    max_jobs = 15          # Bir vaqtda 15 ta parallel yuklash (ortiqchalari Redis navbatida tartib bilan kutadi)
+    job_timeout = 180       # 3 daqiqadan oshgan qotib qolgan vazifalarni to'xtatish
+    max_tries = 1          # Xatolik bo'lsa navbatni tiqib tashlamaslik uchun 1 marta bajarish
+    keep_result = 60       # Natijalarni Redis-da faqat 60 soniya saqlash

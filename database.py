@@ -75,6 +75,8 @@ async def init_db(ctx=None):
         await session.commit()
 
 async def add_user(user_id: int, username: Optional[str]):
+    if not user_id or user_id <= 0:
+        return
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         if not user:
@@ -86,6 +88,8 @@ async def add_user(user_id: int, username: Optional[str]):
             await session.commit()
 
 async def set_user_active(user_id: int, is_active: bool):
+    if not user_id or user_id <= 0:
+        return
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         if user and user.is_active != is_active:
@@ -94,7 +98,7 @@ async def set_user_active(user_id: int, is_active: bool):
 
 async def get_all_users(only_active: bool = False) -> List[int]:
     async with AsyncSessionLocal() as session:
-        stmt = select(User.id)
+        stmt = select(User.id).where(User.id > 0)
         if only_active:
             stmt = stmt.where(User.is_active.is_(True))
         result = await session.execute(stmt)
