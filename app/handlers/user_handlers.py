@@ -123,9 +123,15 @@ async def handle_message(message: types.Message, redis: ArqRedis):
         builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_user.username}?startgroup=true"))
         markup = builder.as_markup()
 
+        # Video uchun maxsus klaviatura (Qo'shiqni yuklab olish bilan)
+        v_builder = InlineKeyboardBuilder()
+        v_builder.row(types.InlineKeyboardButton(text="📩 Qo'shiqni yuklab olish", callback_data=f"audio:{url_hash}"))
+        v_builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_user.username}?startgroup=true"))
+        video_markup = v_builder.as_markup()
+
         try:
             if cached.file_type == 'video':
-                return await message.reply_video(cached.file_id, caption=caption_text, reply_markup=markup)
+                return await message.reply_video(cached.file_id, caption=caption_text, reply_markup=video_markup, supports_streaming=True)
             elif cached.file_type == 'photo':
                 return await message.reply_photo(cached.file_id, caption=caption_text, reply_markup=markup)
             elif cached.file_type == 'audio':
@@ -143,6 +149,31 @@ async def handle_message(message: types.Message, redis: ArqRedis):
         'video',
         wait_msg.message_id,
         message.message_id
+    )
+
+@router.callback_query(F.data.startswith("audio:"))
+async def handle_audio_download(callback: types.CallbackQuery, redis: ArqRedis):
+    url_hash = callback.data.split(":", 1)[1]
+    cached = await get_from_cache(url_hash)
+    if not cached or not cached.original_url:
+        return await callback.answer("❌ Havola ma'lumotlari topilmadi.", show_alert=True)
+    
+    # 1. Keshda tayyor audio bormi tekshirish
+    audio_hash = DownloaderService.get_url_hash(cached.original_url + "_audio")
+    cached_audio = await get_from_cache(audio_hash)
+    if cached_audio:
+        await callback.answer()
+        return await callback.message.reply_audio(cached_audio.file_id)
+        
+    await callback.answer("⏳ Qo'shiq yuklanmoqda...")
+    wait_msg = await callback.message.reply("🎵 Audio yuklanmoqda...")
+    await redis.enqueue_job(
+        'download_task',
+        callback.message.chat.id,
+        cached.original_url,
+        'audio',
+        wait_msg.message_id,
+        callback.message.message_id
     )
 
 @router.callback_query(F.data == "check_sub")

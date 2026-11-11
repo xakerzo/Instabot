@@ -27,20 +27,91 @@ def get_video_info(video_path: str) -> Dict[str, Any]:
             width = int(video_stream.get('width', 0)) or None
             height = int(video_stream.get('height', 0)) or None
             
+            # Agar formatda duration bo'lmasa, streamdan olish
+            if not duration:
+                stream_dur = video_stream.get('duration')
+                if stream_dur:
+                    try:
+                        duration = int(float(stream_dur))
+                    except Exception:
+                        pass
+                    
+            # Rotatsiya tekshirish (90 yoki 270 gradus bo'lsa width va height almashadi)
+            rotation = 0
+            for sd in video_stream.get('side_data_list', []):
+                if 'rotation' in sd:
+                    try:
+                        rotation = abs(int(sd['rotation']))
+                    except Exception:
+                        pass
+            if not rotation:
+                tags = video_stream.get('tags', {})
+                try:
+                    rotation = abs(int(tags.get('rotate', 0)))
+                except Exception:
+                    pass
+            if rotation in (90, 270) and width and height:
+                width, height = height, width
+
         base_name, _ = os.path.splitext(video_path)
         thumb_candidate = f"{base_name}_thumb.jpg"
         
-        # 1-sekunddagi kadrni olish (video 1s dan qisqa bo'lsa 0-sekund)
-        ss_time = 1.0 if duration > 1 else 0.0
-        (
-            ffmpeg
-            .input(video_path, ss=ss_time)
-            .output(thumb_candidate, vframes=1, **{'q:v': 2})
-            .overwrite_output()
-            .run(quiet=True)
-        )
+        # 1-sekunddagi kadrni olish (video 2s dan qisqa bo'lsa 0.5s yoki 0s)
+        if duration >= 2:
+            ss_time = 1.0
+        elif duration >= 1:
+            ss_time = 0.5
+        else:
+            ss_time = 0.0
+            
+        # Telegram Bot API qoidasi:
+        # Thumbnail JPEG formatda bo'lishi, 200KB dan oshmasligi va 
+        # ENI ham, BO'YI ham 320px dan oshmasligi SHART!
+        # Aks holda Telegram thumbnailni qabul qilmaydi va video oppoq bo'lib qoladi.
+        try:
+            (
+                ffmpeg
+                .input(video_path, ss=ss_time)
+                .filter('scale', 'if(gt(iw,ih),320,-2)', 'if(gt(iw,ih),-2,320)')
+                .output(thumb_candidate, vframes=1, **{'q:v': 2})
+                .overwrite_output()
+                .run(quiet=True)
+            )
+        except Exception:
+            pass
+            
+        # Agar ss_time da kadr olinmasa, 0.0s dan olishga urinish
+        if not os.path.exists(thumb_candidate) or os.path.getsize(thumb_candidate) == 0:
+            try:
+                (
+                    ffmpeg
+                    .input(video_path, ss=0.0)
+                    .filter('scale', 'if(gt(iw,ih),320,-2)', 'if(gt(iw,ih),-2,320)')
+                    .output(thumb_candidate, vframes=1, **{'q:v': 2})
+                    .overwrite_output()
+                    .run(quiet=True)
+                )
+            except Exception:
+                pass
+
         if os.path.exists(thumb_candidate) and os.path.getsize(thumb_candidate) > 0:
-            thumb_path = thumb_candidate
+            # Telegram 200KB limitidan oshmasligini tekshirish
+            if os.path.getsize(thumb_candidate) <= 200 * 1024:
+                thumb_path = thumb_candidate
+            else:
+                try:
+                    (
+                        ffmpeg
+                        .input(video_path, ss=ss_time)
+                        .filter('scale', 'if(gt(iw,ih),320,-2)', 'if(gt(iw,ih),-2,320)')
+                        .output(thumb_candidate, vframes=1, **{'q:v': 8})
+                        .overwrite_output()
+                        .run(quiet=True)
+                    )
+                    if os.path.exists(thumb_candidate) and os.path.getsize(thumb_candidate) <= 200 * 1024:
+                        thumb_path = thumb_candidate
+                except Exception:
+                    pass
     except Exception as e:
         logging.warning(f"Video preview yoki metadata olishda xatolik: {e}")
         

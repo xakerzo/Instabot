@@ -12,6 +12,7 @@ from config import Config, setup_environment, get_redis_settings
 from app.services.downloader import DownloaderService
 from app.utils.video_processor import compress_video, get_video_info
 import database
+import ffmpeg
 
 def cleanup_download_folder(folder_path: str, max_age_seconds: int = 600):
     """
@@ -62,6 +63,24 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
 
         if media_type == 'video':
             file_path = result['file_path']
+            
+            # Agar format .mp4 bo'lmasa (masalan .webm), Telegram yaxshi qabul qilishi uchun .mp4 ga o'giramiz
+            if file_path and not file_path.lower().endswith('.mp4') and os.path.exists(file_path):
+                mp4_target = os.path.splitext(file_path)[0] + ".mp4"
+                try:
+                    (
+                        ffmpeg
+                        .input(file_path)
+                        .output(mp4_target, vcodec='libx264', acodec='aac', preset='veryfast', movflags='+faststart')
+                        .overwrite_output()
+                        .run(quiet=True)
+                    )
+                    if os.path.exists(mp4_target) and os.path.getsize(mp4_target) > 0:
+                        files_to_clean.append(mp4_target)
+                        file_path = mp4_target
+                except Exception as ex:
+                    logging.warning(f"Video formatini MP4 ga o'tkazishda xatolik: {ex}")
+
             file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
 
             # Agar 50MB dan katta bo'lsa, siqish
@@ -92,6 +111,12 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
                 files_to_clean.append(meta['thumb_path'])
                 thumb_file = types.FSInputFile(meta['thumb_path'])
 
+            # Video tagidagi tugmalar: Qo'shiqni yuklab olish va Guruhga qo'shish
+            v_builder = InlineKeyboardBuilder()
+            v_builder.row(types.InlineKeyboardButton(text="📩 Qo'shiqni yuklab olish", callback_data=f"audio:{url_hash}"))
+            v_builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
+            video_markup = v_builder.as_markup()
+
             sent_msg = await bot.send_video(
                 chat_id=user_id,
                 video=types.FSInputFile(file_path),
@@ -102,7 +127,7 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
                 supports_streaming=True,
                 caption=caption_text,
                 reply_to_message_id=reply_to_id,
-                reply_markup=markup
+                reply_markup=video_markup
             )
             if sent_msg and sent_msg.video:
                 await database.add_to_cache(url_hash, sent_msg.video.file_id, 'video', file_size, original_url=url)
@@ -169,6 +194,9 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
             )
             if sent_msg and sent_msg.audio:
                 await database.add_to_cache(url_hash, sent_msg.audio.file_id, 'audio', file_size, original_url=url)
+                audio_hash = downloader.get_url_hash(url + "_audio")
+                if audio_hash != url_hash:
+                    await database.add_to_cache(audio_hash, sent_msg.audio.file_id, 'audio', file_size, original_url=url)
 
         # Muvaffaqiyatli yuklanganda statistika oshiriladi
         await database.increment_stats('total_downloads')

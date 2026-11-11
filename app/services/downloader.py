@@ -26,7 +26,12 @@ class DownloaderService:
                 'Upgrade-Insecure-Requests: 1',
             ],
             'socket_timeout': 15,
-            'writethumbnail': True,
+            'writethumbnail': False,
+            'concurrent_fragment_downloads': 4,
+            'merge_output_format': 'mp4',
+            'postprocessor_args': {
+                'ffmpeg': ['-movflags', '+faststart']
+            },
         }
         
         # Cookies faylini tekshirish (asosan Instagram uchun)
