@@ -1,7 +1,9 @@
 import os
 import urllib.parse
+import logging
 from typing import Optional
 from dotenv import load_dotenv
+import redis
 from arq.connections import RedisSettings
 
 load_dotenv()
@@ -44,10 +46,80 @@ class Config:
     PROXY_LIST_PATH = clean_str(os.getenv("PROXY_LIST_PATH")) or "./proxies.txt"
     CACHE_TTL = 3600 * 24 * 7 
 
+def resolve_redis_settings(settings: RedisSettings) -> RedisSettings:
+    """
+    Redis serveriga turli usullar bilan ulanishni sinab ko'radi va avtomatik ishlaydiganini topadi:
+    1. Sozlangan (username, password) bilan
+    2. Faqat parol bilan (usernamesiz)
+    3. Parolsiz (chunki ko'pincha Coolify Redis-da parol bo'lmaydi)
+    """
+    # 1-sinov: Sozlangan parametrlar bilan
+    try:
+        r = redis.Redis(
+            host=settings.host,
+            port=settings.port,
+            username=settings.username,
+            password=settings.password,
+            db=settings.database,
+            ssl=settings.ssl,
+            socket_timeout=2.0,
+            socket_connect_timeout=2.0
+        )
+        r.ping()
+        logging.info(f"✅ Redis-ga muvaffaqiyatli ulandi (user='{settings.username}')")
+        return settings
+    except redis.AuthenticationError:
+        logging.warning("⚠️ Redis autentifikatsiyani rad etdi. Muqobil variantlar sinab ko'rilmoqda...")
+    except Exception as e:
+        return settings
+
+    # 2-sinov: Faqat parol bilan (usernamesiz)
+    if settings.password:
+        try:
+            r = redis.Redis(
+                host=settings.host,
+                port=settings.port,
+                username=None,
+                password=settings.password,
+                db=settings.database,
+                ssl=settings.ssl,
+                socket_timeout=2.0,
+                socket_connect_timeout=2.0
+            )
+            r.ping()
+            logging.info("✅ Redis-ga faqat parol bilan (usernamesiz) muvaffaqiyatli ulandi!")
+            settings.username = None
+            return settings
+        except redis.AuthenticationError:
+            pass
+        except Exception:
+            return settings
+
+    # 3-sinov: Parolsiz (agar Redis serverda parol o'rnatilmagan bo'lsa)
+    try:
+        r = redis.Redis(
+            host=settings.host,
+            port=settings.port,
+            username=None,
+            password=None,
+            db=settings.database,
+            ssl=settings.ssl,
+            socket_timeout=2.0,
+            socket_connect_timeout=2.0
+        )
+        r.ping()
+        logging.info("✅ Redis-ga PAROLSIZ muvaffaqiyatli ulandi! (Serverda parol yo'q ekan)")
+        settings.username = None
+        settings.password = None
+        return settings
+    except Exception as e:
+        logging.error(f"❌ Redis parolsiz ham ulanmadi: {e}")
+
+    return settings
+
 def get_redis_settings() -> RedisSettings:
     """
     Redis ulanish parametrlarini xavfsiz va aniq qaytaradi.
-    Redis 6/7 ACL (Coolify, Docker) da username 'default' bo'lishini ta'minlaydi.
     """
     if Config.REDIS_URL:
         url = Config.REDIS_URL.strip()
@@ -55,7 +127,6 @@ def get_redis_settings() -> RedisSettings:
         username = urllib.parse.unquote(parsed.username) if parsed.username else None
         password = urllib.parse.unquote(parsed.password) if parsed.password else None
         
-        # Agar parol bo'lsa va username bo'sh bo'lsa, 'default' foydalanuvchi qilib belgilaymiz
         if not username and password:
             username = "default"
             
@@ -63,7 +134,7 @@ def get_redis_settings() -> RedisSettings:
         if parsed.path and parsed.path.lstrip("/").isdigit():
             database = int(parsed.path.lstrip("/"))
             
-        return RedisSettings(
+        settings = RedisSettings(
             host=parsed.hostname or "localhost",
             port=parsed.port or 6379,
             username=username,
@@ -71,18 +142,19 @@ def get_redis_settings() -> RedisSettings:
             database=database,
             ssl=parsed.scheme == "rediss"
         )
+        return resolve_redis_settings(settings)
 
-    # Alohida parametrlar berilganda
     username = Config.REDIS_USER
     if (not username or username == "") and Config.REDIS_PASSWORD:
         username = "default"
         
-    return RedisSettings(
+    settings = RedisSettings(
         host=Config.REDIS_HOST,
         port=Config.REDIS_PORT,
         username=username if Config.REDIS_PASSWORD else None,
         password=Config.REDIS_PASSWORD
     )
+    return resolve_redis_settings(settings)
 
 def setup_environment():
     """Tayyorgarlik amallari: papkalar yaratish va cookies faylini sozlash"""
