@@ -8,19 +8,10 @@ from aiogram import Bot, types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
-from config import Config, setup_environment
+from config import Config, setup_environment, get_redis_settings
 from app.services.downloader import DownloaderService
 from app.utils.video_processor import compress_video
 import database
-
-def get_redis_settings() -> RedisSettings:
-    if Config.REDIS_URL:
-        return RedisSettings.from_dsn(Config.REDIS_URL)
-    return RedisSettings(
-        host=Config.REDIS_HOST,
-        port=Config.REDIS_PORT,
-        password=Config.REDIS_PASSWORD
-    )
 
 def cleanup_download_folder(folder_path: str, max_age_seconds: int = 600):
     """
