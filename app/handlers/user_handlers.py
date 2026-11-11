@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 from aiogram import Router, F, types, Bot
 from aiogram.filters import Command
@@ -162,6 +163,39 @@ async def handle_audio_download(callback: types.CallbackQuery, redis: ArqRedis):
     if not cached or not cached.original_url:
         return await callback.answer("❌ Havola ma'lumotlari topilmadi.", show_alert=True)
     
+    # 0. Redis keshdan qidiruv natijalarini tekshirish (o'ta tezkor javob uchun)
+    music_cache_key = f"music_search:{url_hash}"
+    try:
+        cached_search = await redis.get(music_cache_key)
+        if cached_search:
+            raw_data = cached_search.decode('utf-8') if isinstance(cached_search, bytes) else cached_search
+            data = json.loads(raw_data)
+            music_info = data.get('music_info')
+            tracks = data.get('tracks')
+            if music_info and tracks:
+                bot_user = await callback.bot.get_me()
+                artist = music_info.get('artist', '')
+                title = music_info.get('title', '')
+                header = f"🎵 <b>{artist} — {title}</b>" if artist else f"🎵 <b>{title}</b>"
+                lines = [header, ""]
+                for idx, t in enumerate(tracks):
+                    lines.append(f"{idx+1}. {t['title']} {t['duration_str']}")
+                lines.append("")
+                lines.append(f"❤️ @{bot_user.username} orqali istagan musiqangizni tez va oson toping! 🚀")
+                text = "\n".join(lines)
+
+                builder = InlineKeyboardBuilder()
+                builder.row(types.InlineKeyboardButton(text="📼 Video", callback_data=f"show_vid:{url_hash}"))
+                num_buttons = []
+                for idx, t in enumerate(tracks):
+                    num_buttons.append(types.InlineKeyboardButton(text=str(idx+1), callback_data=f"yt_audio:{t['id']}"))
+                builder.row(*num_buttons)
+
+                await callback.answer()
+                return await callback.message.reply(text, parse_mode="HTML", reply_markup=builder.as_markup())
+    except Exception as e:
+        logging.warning(f"Keshdagi musiqani o'qishda xatolik: {e}")
+
     await callback.answer("🔍 Videodagi musiqa aniqlanmoqda...")
     status_msg = await callback.message.reply("🔍 Musiqa qidirilmoqda, kuting...")
     
@@ -176,6 +210,12 @@ async def handle_audio_download(callback: types.CallbackQuery, redis: ArqRedis):
         tracks = await music_service.search_tracks(query, limit=5)
         
         if tracks:
+            # Qidiruv natijasini Redis-ga 7 kunga keshga saqlash
+            try:
+                await redis.set(music_cache_key, json.dumps({'music_info': music_info, 'tracks': tracks}), ex=86400 * 7)
+            except Exception as e:
+                logging.warning(f"Musiqa natijasini keshga yozishda xatolik: {e}")
+
             bot_user = await callback.bot.get_me()
             header = f"🎵 <b>{artist} — {title}</b>" if artist else f"🎵 <b>{title}</b>"
             lines = [header, ""]
@@ -200,7 +240,11 @@ async def handle_audio_download(callback: types.CallbackQuery, redis: ArqRedis):
     cached_audio = await get_from_cache(audio_hash)
     if cached_audio:
         await status_msg.delete()
-        return await callback.message.reply_audio(cached_audio.file_id)
+        bot_user = await callback.bot.get_me()
+        return await callback.message.reply_audio(
+            cached_audio.file_id,
+            caption=f"❤️ @{bot_user.username} orqali yuklab olindi 🚀"
+        )
         
     await status_msg.edit_text("🎵 Video audiosi yuklanmoqda...")
     await redis.enqueue_job(
@@ -219,7 +263,11 @@ async def handle_yt_audio_download(callback: types.CallbackQuery):
     cached = await get_from_cache(cache_key)
     if cached:
         await callback.answer()
-        return await callback.message.reply_audio(cached.file_id)
+        bot_user = await callback.bot.get_me()
+        return await callback.message.reply_audio(
+            cached.file_id,
+            caption=f"❤️ @{bot_user.username} orqali yuklab olindi 🚀"
+        )
 
     await callback.answer("⏳ Qo'shiq yuklanmoqda...")
     wait_msg = await callback.message.reply("🎵 Audio yuklanmoqda...")
@@ -235,10 +283,12 @@ async def handle_yt_audio_download(callback: types.CallbackQuery):
 
     file_path = res['file_path']
     try:
+        bot_user = await callback.bot.get_me()
         sent_audio = await callback.message.reply_audio(
             types.FSInputFile(file_path),
             title=res.get('title'),
-            performer=res.get('artist')
+            performer=res.get('artist'),
+            caption=f"❤️ @{bot_user.username} orqali yuklab olindi 🚀"
         )
         if sent_audio and sent_audio.audio:
             await add_to_cache(
