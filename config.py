@@ -1,4 +1,5 @@
 import os
+import re
 import urllib.parse
 import logging
 from typing import Optional, List
@@ -35,7 +36,15 @@ def get_db_url() -> str:
 
 class Config:
     BOT_TOKEN = clean_str(os.getenv("BOT_TOKEN")) or ""
-    ADMIN_IDS = [int(i.strip()) for i in os.getenv("ADMIN_IDS", "").split(",") if i.strip().isdigit()]
+    
+    # Har qanday formatdagi adminlarni (ADMIN_IDS, ADMIN_ID, OWNER_ID) xatosiz son qilib ajratib olish
+    _raw_admins = clean_str(
+        os.getenv("ADMIN_IDS") or 
+        os.getenv("ADMIN_ID") or 
+        os.getenv("OWNER_ID") or 
+        os.getenv("ADMIN") or ""
+    ) or ""
+    ADMIN_IDS = [int(x) for x in re.findall(r'\d+', _raw_admins)]
     
     REDIS_URL = clean_str(os.getenv("REDIS_URL"))
     REDIS_HOST = clean_str(os.getenv("REDISHOST") or os.getenv("REDIS_HOST")) or "localhost"
@@ -135,6 +144,11 @@ def setup_environment():
     """Tayyorgarlik amallari: papkalar yaratish va cookies faylini sozlash"""
     os.makedirs(Config.DOWNLOAD_PATH, exist_ok=True)
     os.makedirs("./data", exist_ok=True)
+    
+    if Config.ADMIN_IDS:
+        logging.info(f"👑 Adminlar ro'yxati (ADMIN_IDS): {Config.ADMIN_IDS}")
+    else:
+        logging.warning("⚠️ DIQQAT: ADMIN_IDS ko'rsatilmagan! Admin paneldan foydalanish uchun Coolify-da ADMIN_IDS o'zgaruvchisini kiriting.")
     
     if Config.INSTAGRAM_COOKIES:
         content = Config.INSTAGRAM_COOKIES.strip()

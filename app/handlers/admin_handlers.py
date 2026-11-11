@@ -29,8 +29,9 @@ class AdminStates(StatesGroup):
     waiting_for_channel_title = State()
     waiting_for_channel_url = State()
     waiting_for_caption = State()
+    waiting_for_start_msg = State()
 
-@router.message(Command("admin"))
+@router.message(Command("admin", "panel"))
 async def cmd_admin(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("🛠 <b>Admin panelga xush kelibsiz:</b>", parse_mode="HTML", reply_markup=admin_main_keyboard())
@@ -134,6 +135,26 @@ async def set_caption(message: types.Message, state: FSMContext):
     val = "" if message.text.strip() == "0" else message.text.strip()
     await database.set_setting('custom_caption', val)
     await message.answer("✅ Izoh muvaffaqiyatli saqlandi!", reply_markup=back_to_admin_keyboard())
+
+@router.callback_query(F.data == "admin_start_msg")
+async def start_msg_settings(callback: types.CallbackQuery, state: FSMContext):
+    current = await database.get_setting('start_message', "")
+    display = current if current else "<i>Standart xabar ishlatilmoqda</i>"
+    await callback.message.edit_text(
+        f"💬 <b>Hozirgi Start xabari:</b>\n\n{display}\n\n"
+        "Yangi Start xabarini yuboring (standart holatga qaytarish uchun <b>0</b> deb yozing):\n\n"
+        "<i>Eslatma: HTML teglaridan (<b>, <i>, <code>) foydalanishingiz mumkin.</i>",
+        parse_mode="HTML",
+        reply_markup=back_to_admin_keyboard()
+    )
+    await state.set_state(AdminStates.waiting_for_start_msg)
+
+@router.message(AdminStates.waiting_for_start_msg)
+async def set_start_msg(message: types.Message, state: FSMContext):
+    await state.clear()
+    val = "" if message.text.strip() == "0" else message.text.strip()
+    await database.set_setting('start_message', val)
+    await message.answer("✅ Start xabari muvaffaqiyatli saqlandi!", reply_markup=back_to_admin_keyboard())
 
 @router.callback_query(F.data == "admin_channels")
 async def list_channels(callback: types.CallbackQuery):

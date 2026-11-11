@@ -52,26 +52,47 @@ async def cmd_start(message: types.Message):
     
     bot_info = await message.bot.get_me()
     builder = InlineKeyboardBuilder()
+    
+    # Agar foydalanuvchi admin/owner bo'lsa, admin panel tugmasini birinchi qatorga chiqaramiz!
+    if user_id in Config.ADMIN_IDS:
+        builder.row(types.InlineKeyboardButton(text="🛠 Admin Panel", callback_data="admin_back"))
+
     builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_info.username}?startgroup=true"))
     
+    custom_start = await get_setting('start_message', "")
+    if custom_start:
+        start_text = custom_start
+    else:
+        start_text = (
+            "👋 <b>Assalomu alaykum!</b>\n\n"
+            "Men quyidagi platformalardan video, rasm va musiqalarni sifatli yuklab beruvchi botman:\n\n"
+            "📸 <b>Instagram</b> (Reels, Post, Karusel)\n"
+            "🎵 <b>TikTok</b> (Suv belgisiz video va slaydlar)\n"
+            "📌 <b>Pinterest</b> (Video va rasmlar)\n"
+            "🎬 <b>YouTube Shorts</b>\n"
+            "🎧 <b>Musiqa topish</b> (Videodagi musiqalarni topish va yuklab olish)\n\n"
+            "Yuklab olish uchun havola (link) yoki video yuboring:"
+        )
+
+    if user_id in Config.ADMIN_IDS:
+        start_text += "\n\n👑 <b>Siz bot adminisiz!</b>\nAdmin panelni ochish uchun /admin buyrug'ini yuboring yoki quyidagi <b>🛠 Admin Panel</b> tugmasini bosing."
+    
     await message.answer(
-        "👋 <b>Assalomu alaykum!</b>\n\n"
-        "Men quyidagi platformalardan video, rasm va musiqalarni sifatli yuklab beruvchi botman:\n\n"
-        "📸 <b>Instagram</b> (Reels, Post, Karusel)\n"
-        "🎵 <b>TikTok</b> (Suv belgisiz video va slaydlar)\n"
-        "📌 <b>Pinterest</b> (Video va rasmlar)\n"
-        "🎬 <b>YouTube Shorts</b>\n"
-        "🎧 <b>Musiqa topish</b> (Videodagi musiqalarni topish va yuklab olish)\n\n"
-        "Yuklab olish uchun havola (link) yoki video yuboring:",
+        start_text,
         parse_mode="HTML",
         reply_markup=builder.as_markup()
     )
 
-@router.message(Command("admin"))
+@router.message(Command("admin", "panel"))
 async def cmd_not_admin(message: types.Message):
     user_id = message.from_user.id if message.from_user else message.chat.id
     await message.answer(
-        f"❌ Kechirasiz, siz admin emassiz.\nSizning ID: <code>{user_id}</code>",
+        f"❌ <b>Kechirasiz, siz bot admini emassiz!</b>\n\n"
+        f"🆔 Sizning Telegram ID raqamingiz: <code>{user_id}</code>\n\n"
+        f"💡 <b>Admin bo'lish uchun:</b>\n"
+        f"Coolify panelingizda (Environment Variables bo'limida):\n"
+        f"<code>ADMIN_IDS={user_id}</code>\n"
+        f"o'zgaruvchisini qo'shing va botni <b>Redeploy</b> qiling.",
         parse_mode="HTML"
     )
 
