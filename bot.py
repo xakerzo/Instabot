@@ -31,6 +31,7 @@ async def main():
     
     # Redis ulanish hovuzi (Connection Pool)
     redis_settings = get_redis_settings()
+    logging.info(f"Redis-ga ulanmoqda: {redis_settings.host}:{redis_settings.port} (username='{redis_settings.username}', parol_mavjud={bool(redis_settings.password)})")
     redis_pool = await create_pool(redis_settings)
     dp["redis"] = redis_pool
     

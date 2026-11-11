@@ -1,4 +1,5 @@
 import os
+import urllib.parse
 from typing import Optional
 from dotenv import load_dotenv
 from arq.connections import RedisSettings
@@ -16,7 +17,6 @@ def clean_str(val: Optional[str]) -> Optional[str]:
 def get_db_url() -> str:
     url = clean_str(os.getenv("DATABASE_URL") or os.getenv("DB_URL")) or "sqlite+aiosqlite:///./data/bot.db"
     
-    # SQLAlchemy 2.x async engine uchun 'postgres://' yoki 'postgresql://' -> 'postgresql+asyncpg://'
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql+asyncpg://", 1)
     elif url.startswith("postgresql://") and not url.startswith("postgresql+"):
@@ -46,20 +46,31 @@ class Config:
 
 def get_redis_settings() -> RedisSettings:
     """
-    Redis ulanish parametrlarini qaytaradi.
+    Redis ulanish parametrlarini xavfsiz va aniq qaytaradi.
     Redis 6/7 ACL (Coolify, Docker) da username 'default' bo'lishini ta'minlaydi.
     """
     if Config.REDIS_URL:
         url = Config.REDIS_URL.strip()
-        if "://" in url:
-            scheme, rest = url.split("://", 1)
-            # Agar 'redis://:password@host' bo'lsa, 'redis://default:password@host' ga o'zgartiramiz
-            if rest.startswith(":"):
-                url = f"{scheme}://default{rest}"
-        settings = RedisSettings.from_dsn(url)
-        if (settings.username == "" or settings.username is None) and settings.password:
-            settings.username = "default"
-        return settings
+        parsed = urllib.parse.urlparse(url)
+        username = urllib.parse.unquote(parsed.username) if parsed.username else None
+        password = urllib.parse.unquote(parsed.password) if parsed.password else None
+        
+        # Agar parol bo'lsa va username bo'sh bo'lsa, 'default' foydalanuvchi qilib belgilaymiz
+        if not username and password:
+            username = "default"
+            
+        database = 0
+        if parsed.path and parsed.path.lstrip("/").isdigit():
+            database = int(parsed.path.lstrip("/"))
+            
+        return RedisSettings(
+            host=parsed.hostname or "localhost",
+            port=parsed.port or 6379,
+            username=username,
+            password=password,
+            database=database,
+            ssl=parsed.scheme == "rediss"
+        )
 
     # Alohida parametrlar berilganda
     username = Config.REDIS_USER
