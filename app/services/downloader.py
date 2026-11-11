@@ -28,15 +28,8 @@ class DownloaderService:
             'wait_for_video': (1, 3),
         }
         
-        # Cookies faylini tekshirish
-        cookie_file = 'cookies.txt' if os.path.exists('cookies.txt') else ('Cookie.txt' if os.path.exists('Cookie.txt') else None)
-        if cookie_file:
-            self.common_opts['cookiefile'] = cookie_file
-        else:
-            try:
-                self.common_opts['cookiesfrombrowser'] = ('chrome', 'edge', 'firefox', 'safari')
-            except Exception as e:
-                logging.warning(f"Brauzerdan cookies olishda xatolik: {e}")
+        # Cookies faylini tekshirish (asosan Instagram uchun)
+        self.cookie_file = 'cookies.txt' if os.path.exists('cookies.txt') else ('Cookie.txt' if os.path.exists('Cookie.txt') else None)
 
     def _get_proxy(self) -> Optional[str]:
         if not Config.USE_PROXY:
@@ -59,6 +52,11 @@ class DownloaderService:
     async def _download_media(self, url: str, proxy: Optional[str] = None) -> Dict[str, Any]:
         opts = self.common_opts.copy()
         opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+        
+        # Instagram bo'lsa, cookies faylini ulaymiz
+        if ('instagram.com' in url or 'instagr.am' in url) and self.cookie_file:
+            opts['cookiefile'] = self.cookie_file
+            
         if proxy:
             opts['proxy'] = proxy
         
@@ -66,7 +64,7 @@ class DownloaderService:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=True))
             
-            # Karusel (bir nechta rasm/video) mavjudligini tekshirish
+            # Karusel (TikTok rasmlar slaydshousi yoki Instagram karusel)
             entries = info.get('entries')
             if entries:
                 valid_entries = [e for e in entries if e]
@@ -91,7 +89,7 @@ class DownloaderService:
                             'type': 'album',
                             'items': items,
                             'files': all_files,
-                            'title': info.get('title', 'Instagram Post')
+                            'title': info.get('title', 'Media Post')
                         }
                 elif len(valid_entries) == 1:
                     info = valid_entries[0]
@@ -111,7 +109,7 @@ class DownloaderService:
                 'type': media_type,
                 'file_path': file_path,
                 'files': [file_path] if file_path else [],
-                'title': info.get('title', 'Instagram Media'),
+                'title': info.get('title', 'Media'),
                 'duration': info.get('duration', 0),
                 'file_size': file_size
             }
@@ -119,6 +117,8 @@ class DownloaderService:
     async def _download_full_audio(self, url: str, proxy: Optional[str] = None) -> Dict[str, Any]:
         loop = asyncio.get_event_loop()
         opts_info = self.common_opts.copy()
+        if ('instagram.com' in url or 'instagr.am' in url) and self.cookie_file:
+            opts_info['cookiefile'] = self.cookie_file
         if proxy:
             opts_info['proxy'] = proxy
             
@@ -161,9 +161,9 @@ class DownloaderService:
                                     'file_size': os.path.getsize(file_path)
                                 }
                 except Exception as e:
-                    logging.warning(f"YouTube search failed: {e}")
+                    logging.warning(f"Audio qidiruvida xatolik: {e}")
 
-            # Fallback to direct Instagram audio extraction
+            # Fallback direct audio extraction
             opts_orig = opts_info.copy()
             opts_orig.update({
                 'format': 'bestaudio/best',

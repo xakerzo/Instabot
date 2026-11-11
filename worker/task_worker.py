@@ -1,4 +1,5 @@
 import os
+import time
 import asyncio
 import logging
 from typing import List, Optional
@@ -20,6 +21,25 @@ def get_redis_settings() -> RedisSettings:
         port=Config.REDIS_PORT,
         password=Config.REDIS_PASSWORD
     )
+
+def cleanup_download_folder(folder_path: str, max_age_seconds: int = 600):
+    """
+    Downloads papkasini tekshirib, eski yoki qolib ketgan fayllarni tozalaydi.
+    Server diski to'lib qolmasligini kafolatlaydi.
+    """
+    if not os.path.exists(folder_path):
+        return
+    now = time.time()
+    for fname in os.listdir(folder_path):
+        fpath = os.path.join(folder_path, fname)
+        if os.path.isfile(fpath):
+            try:
+                # Chala fayllar (.part, .temp) yoki muddati o'tgan fayllar
+                if fname.endswith(('.part', '.temp', '.ytdl')) or (now - os.path.getmtime(fpath) > max_age_seconds):
+                    os.remove(fpath)
+                    logging.info(f"Eski fayl tozalandi: {fpath}")
+            except Exception as e:
+                logging.warning(f"Faylni tozalashda xatolik ({fpath}): {e}")
 
 async def download_task(ctx, user_id: int, url: str, mode: str = 'video', message_id: Optional[int] = None):
     bot: Bot = ctx.get('bot') or Bot(token=Config.BOT_TOKEN)
@@ -122,7 +142,6 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
                     media_group.append(types.InputMediaPhoto(media=types.FSInputFile(f_path), caption=cap))
             
             if media_group:
-                # Telegram birdaniga ko'pi bilan 10 ta media yuborishga ruxsat beradi
                 chunks = [media_group[i:i + 10] for i in range(0, len(media_group), 10)]
                 for chunk in chunks:
                     await bot.send_media_group(chat_id=user_id, media=chunk)
@@ -152,7 +171,7 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
         if "empty media response" in error_msg.lower() or "private" in error_msg.lower():
             user_message = "❌ Bu post yopiq (private) profilga tegishli yoki o'chirib tashlangan. Bot faqat ochiq postlarni yuklay oladi."
         elif "rate-limit" in error_msg.lower() or "login required" in error_msg.lower():
-            user_message = "⚠️ Instagram cheklovi yuz berdi. Iltimos, birozdan so'ng qayta urinib ko'ring yoki botga yangilangan cookies taqdim eting."
+            user_message = "⚠️ Platforma cheklovi yuz berdi. Iltimos, birozdan so'ng qayta urinib ko'ring."
         elif "file is too big" in error_msg.lower():
             user_message = "⚠️ Fayl hajmi juda katta bo'lgani uchun uni Telegram orqali yuborib bo'lmadi."
 
@@ -162,15 +181,19 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
             pass
 
     finally:
-        # Vaqtinchalik fayllarni diskdan 100% tozalash
+        # 1. Vazifada yaratilgan barcha fayllarni darhol diskdan 100% tozalash
         for f in files_to_clean:
             if f and os.path.exists(f):
                 try:
                     os.remove(f)
+                    logging.info(f"Vaqtinchalik fayl serverdan tozalandi: {f}")
                 except Exception as ex:
                     logging.warning(f"Faylni o'chirishda xatolik ({f}): {ex}")
                     
-        # Kutilayotgan xabarni o'chirish
+        # 2. Xavfsizlik uchun qoldiq fayllarni tozalash (serverni to'lib ketishidan saqlash)
+        cleanup_download_folder(Config.DOWNLOAD_PATH, max_age_seconds=600)
+                    
+        # 3. Kutilayotgan xabarni o'chirish
         if message_id:
             try:
                 await bot.delete_message(chat_id=user_id, message_id=message_id)
@@ -180,9 +203,11 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
 async def startup(ctx):
     setup_environment()
     await database.init_db()
+    # Ishga tushganda eski qoldiq fayllarni darhol tozalash
+    cleanup_download_folder(Config.DOWNLOAD_PATH, max_age_seconds=0)
     ctx['bot'] = Bot(token=Config.BOT_TOKEN)
     ctx['downloader'] = DownloaderService()
-    logging.info("Worker muvaffaqiyatli ishga tushdi")
+    logging.info("Worker muvaffaqiyatli ishga tushdi va disk tozalandi")
 
 async def shutdown(ctx):
     bot: Bot = ctx.get('bot')

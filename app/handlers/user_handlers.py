@@ -13,7 +13,7 @@ from database import (
     get_channels,
     get_setting
 )
-from app.utils.validators import extract_instagram_url
+from app.utils.validators import extract_media_url
 from app.services.downloader import DownloaderService
 
 router = Router()
@@ -52,8 +52,12 @@ async def cmd_start(message: types.Message):
     
     await message.answer(
         "👋 <b>Assalomu alaykum!</b>\n\n"
-        "Men Instagramdan video, rasm va karusellarni yuklab beruvchi qulay botman.\n\n"
-        "Yuklab olish uchun Instagram havolasini yuboring:",
+        "Men quyidagi platformalardan video, rasm va musiqalarni sifatli yuklab beruvchi botman:\n\n"
+        "📸 <b>Instagram</b> (Reels, Post, Karusel)\n"
+        "🎵 <b>TikTok</b> (Suv belgisiz video va slaydlar)\n"
+        "📌 <b>Pinterest</b> (Video va rasmlar)\n"
+        "🎬 <b>YouTube Shorts</b>\n\n"
+        "Yuklab olish uchun havola (link) yuboring:",
         parse_mode="HTML",
         reply_markup=builder.as_markup()
     )
@@ -68,12 +72,21 @@ async def cmd_not_admin(message: types.Message):
 
 @router.message(F.text)
 async def handle_message(message: types.Message, redis: ArqRedis):
-    url = extract_instagram_url(message.text)
-    if not url:
+    parsed = extract_media_url(message.text)
+    if not parsed:
         if message.chat.type in ['group', 'supergroup']:
             return
-        return await message.answer("❌ Bu to'g'ri Instagram havolasi emas!\nIltimos, post yoki reel havolasini yuboring.")
+        return await message.answer(
+            "❌ <b>Qo'llab-quvvatlanmaydigan havola!</b>\n\n"
+            "Iltimos, quyidagi platformalardan birining havolasini yuboring:\n"
+            "• 📸 <b>Instagram</b>\n"
+            "• 🎵 <b>TikTok</b>\n"
+            "• 📌 <b>Pinterest</b>\n"
+            "• 🎬 <b>YouTube Shorts</b>",
+            parse_mode="HTML"
+        )
 
+    url, platform = parsed
     user_id = message.from_user.id if message.from_user else message.chat.id
     username = message.from_user.username if message.from_user else None
 
@@ -115,7 +128,7 @@ async def handle_message(message: types.Message, redis: ArqRedis):
             elif cached.file_type == 'audio':
                 return await message.reply_audio(cached.file_id, caption=caption_text, reply_markup=markup)
         except Exception as e:
-            logging.warning(f"Keshdagi file_id yaroqsiz bo'lib qolgan ({e}). Qayta yuklanmoqda...")
+            logging.warning(f"Keshdagi file_id yaroqsiz ({e}). Qayta yuklanmoqda...")
             await remove_from_cache(url_hash)
 
     # Navbatga qo'shish
@@ -133,4 +146,4 @@ async def check_sub_btn(callback: types.CallbackQuery):
             await callback.message.delete()
         except Exception:
             pass
-        await callback.message.answer("✅ Rahmat! Endi Instagram havolasini yuborishingiz mumkin.")
+        await callback.message.answer("✅ Rahmat! Endi Instagram, TikTok, Pinterest yoki YouTube Shorts havolasini yuborishingiz mumkin.")
