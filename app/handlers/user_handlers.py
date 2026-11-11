@@ -74,8 +74,10 @@ async def cmd_not_admin(message: types.Message):
 async def handle_message(message: types.Message, redis: ArqRedis):
     parsed = extract_media_url(message.text)
     if not parsed:
+        # Guruhlarda oddiy xabarlarga bot umuman aralashmaydi va indamaydi
         if message.chat.type in ['group', 'supergroup']:
             return
+        # Faqat shaxsiy chatda xatolik bildirishnomasi beriladi
         return await message.answer(
             "❌ <b>Qo'llab-quvvatlanmaydigan havola!</b>\n\n"
             "Iltimos, quyidagi platformalardan birining havolasini yuboring:\n"
@@ -90,8 +92,9 @@ async def handle_message(message: types.Message, redis: ArqRedis):
     user_id = message.from_user.id if message.from_user else message.chat.id
     username = message.from_user.username if message.from_user else None
 
-    # Majburiy obunani tekshirish (Adminlar uchun tekshirilmaydi)
-    if user_id not in Config.ADMIN_IDS:
+    # Majburiy obunani tekshirish:
+    # Faqat shaxsiy (private) chatda tekshiriladi, guruhlarni bezovta qilmaymiz
+    if message.chat.type == 'private' and user_id not in Config.ADMIN_IDS:
         not_subscribed = await check_subscription(user_id, message.bot)
         if not_subscribed:
             builder = InlineKeyboardBuilder()
@@ -131,9 +134,16 @@ async def handle_message(message: types.Message, redis: ArqRedis):
             logging.warning(f"Keshdagi file_id yaroqsiz ({e}). Qayta yuklanmoqda...")
             await remove_from_cache(url_hash)
 
-    # Navbatga qo'shish
-    wait_msg = await message.answer("⏳ Navbatga qo'shildi...")
-    await redis.enqueue_job('download_task', message.chat.id, url, 'video', wait_msg.message_id)
+    # Navbatga qo'shish (guruhda foydalanuvchining havolasiga javob (reply) qilib yuborishi uchun message.message_id uzatiladi)
+    wait_msg = await message.reply("⏳ Navbatga qo'shildi...")
+    await redis.enqueue_job(
+        'download_task',
+        message.chat.id,
+        url,
+        'video',
+        wait_msg.message_id,
+        message.message_id
+    )
 
 @router.callback_query(F.data == "check_sub")
 async def check_sub_btn(callback: types.CallbackQuery):
@@ -146,4 +156,4 @@ async def check_sub_btn(callback: types.CallbackQuery):
             await callback.message.delete()
         except Exception:
             pass
-        await callback.message.answer("✅ Rahmat! Endi Instagram, TikTok, Pinterest yoki YouTube Shorts havolasini yuborishingiz mumkin.")
+        await callback.message.answer("✅ Rahmat! Endi havola yuborishingiz mumkin.")

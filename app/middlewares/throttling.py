@@ -2,6 +2,7 @@ from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware, types
 from cachetools import TTLCache
 from config import Config
+from app.utils.validators import is_supported_url
 
 class ThrottlingMiddleware(BaseMiddleware):
     def __init__(self, slow_mode: float = 2.0):
@@ -24,6 +25,13 @@ class ThrottlingMiddleware(BaseMiddleware):
         # Adminlarga throttling ta'sir qilmaydi
         if user.id in Config.ADMIN_IDS:
             return await handler(event, data)
+
+        # Guruhlarda oddiy suhbatlashayotgan odamlarga xalal bermaslik
+        # Throttling faqat botga buyruq yoki media havolasi yuborilgandagina qo'llanadi
+        if event.chat.type in ['group', 'supergroup']:
+            text = event.text or event.caption or ""
+            if not (text.startswith('/') or is_supported_url(text)):
+                return await handler(event, data)
 
         user_id = user.id
         if user_id in self.cache:

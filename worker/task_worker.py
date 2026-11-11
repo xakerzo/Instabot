@@ -32,7 +32,7 @@ def cleanup_download_folder(folder_path: str, max_age_seconds: int = 600):
             except Exception as e:
                 logging.warning(f"Faylni tozalashda xatolik ({fpath}): {e}")
 
-async def download_task(ctx, user_id: int, url: str, mode: str = 'video', message_id: Optional[int] = None):
+async def download_task(ctx, user_id: int, url: str, mode: str = 'video', message_id: Optional[int] = None, reply_to_id: Optional[int] = None):
     bot: Bot = ctx.get('bot') or Bot(token=Config.BOT_TOKEN)
     downloader: DownloaderService = ctx.get('downloader') or DownloaderService()
     
@@ -114,6 +114,7 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
                 thumbnail=thumb_file,
                 supports_streaming=True,
                 caption=caption_text,
+                reply_to_message_id=reply_to_id,
                 reply_markup=markup
             )
             if sent_msg and sent_msg.video:
@@ -126,6 +127,7 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
                 chat_id=user_id,
                 photo=types.FSInputFile(file_path),
                 caption=caption_text,
+                reply_to_message_id=reply_to_id,
                 reply_markup=markup
             )
             if sent_msg and sent_msg.photo:
@@ -162,9 +164,10 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
             
             if media_group:
                 chunks = [media_group[i:i + 10] for i in range(0, len(media_group), 10)]
-                for chunk in chunks:
-                    await bot.send_media_group(chat_id=user_id, media=chunk)
-                await bot.send_message(chat_id=user_id, text=f"❤️ @{bot_username} orqali yuklab olindi 🚀", reply_markup=markup)
+                for c_idx, chunk in enumerate(chunks):
+                    r_id = reply_to_id if c_idx == 0 else None
+                    await bot.send_media_group(chat_id=user_id, media=chunk, reply_to_message_id=r_id)
+                await bot.send_message(chat_id=user_id, text=f"❤️ @{bot_username} orqali yuklab olindi 🚀", reply_markup=markup, reply_to_message_id=reply_to_id)
 
         elif media_type == 'audio':
             file_path = result['file_path']
@@ -174,6 +177,7 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
                 audio=types.FSInputFile(file_path),
                 caption=caption_text,
                 title=result.get('title', 'Audio'),
+                reply_to_message_id=reply_to_id,
                 reply_markup=markup
             )
             if sent_msg and sent_msg.audio:
