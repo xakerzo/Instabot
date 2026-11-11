@@ -3,6 +3,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def get_db_url() -> str:
+    # Railway, Heroku va boshqa cloud platformalar 'DATABASE_URL' yoki 'DB_URL' beradi
+    url = os.getenv("DATABASE_URL") or os.getenv("DB_URL") or "sqlite+aiosqlite:///./data/bot.db"
+    
+    # SQLAlchemy 2.x async engine uchun 'postgres://' yoki 'postgresql://' -> 'postgresql+asyncpg://'
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgresql://") and not url.startswith("postgresql+"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        
+    return url
+
 class Config:
     BOT_TOKEN = os.getenv("BOT_TOKEN", "")
     ADMIN_IDS = [int(i.strip()) for i in os.getenv("ADMIN_IDS", "").split(",") if i.strip().isdigit()]
@@ -12,7 +24,7 @@ class Config:
     REDIS_PORT = int(os.getenv("REDISPORT", os.getenv("REDIS_PORT", 6379)))
     REDIS_PASSWORD = os.getenv("REDISPASSWORD", os.getenv("REDIS_PASSWORD")) or None
     
-    DB_URL = os.getenv("DB_URL", "sqlite+aiosqlite:///./data/bot.db")
+    DB_URL = get_db_url()
     DOWNLOAD_PATH = os.getenv("DOWNLOAD_PATH", "./downloads")
     
     INSTAGRAM_COOKIES = os.getenv("INSTAGRAM_COOKIES")

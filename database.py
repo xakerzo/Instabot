@@ -96,7 +96,7 @@ async def get_all_users(only_active: bool = False) -> List[int]:
     async with AsyncSessionLocal() as session:
         stmt = select(User.id)
         if only_active:
-            stmt = stmt.where(User.is_active == True)
+            stmt = stmt.where(User.is_active.is_(True))
         result = await session.execute(stmt)
         return list(result.scalars().all())
 
@@ -108,7 +108,7 @@ async def get_users_count() -> int:
 async def get_stats_summary() -> Dict[str, int]:
     async with AsyncSessionLocal() as session:
         total_users = (await session.execute(select(func.count(User.id)))).scalar() or 0
-        active_users = (await session.execute(select(func.count(User.id)).where(User.is_active == True))).scalar() or 0
+        active_users = (await session.execute(select(func.count(User.id)).where(User.is_active.is_(True)))).scalar() or 0
         
         stat_res = (await session.execute(select(Stat.value).where(Stat.key == 'total_downloads'))).scalar()
         total_downloads = stat_res if stat_res is not None else 0
