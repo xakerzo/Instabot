@@ -10,7 +10,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
 from config import Config, setup_environment, get_redis_settings
 from app.services.downloader import DownloaderService
-from app.utils.video_processor import compress_video
+from app.utils.video_processor import compress_video, get_video_info
 import database
 
 def cleanup_download_folder(folder_path: str, max_age_seconds: int = 600):
@@ -95,9 +95,24 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
                 await bot.send_message(user_id, "⚠️ Video hajmi Telegram limitidan (50MB) katta bo'lgani uchun yuborib bo'lmadi.")
                 return
 
+            # Video uchun metadata va chiroyli preview thumbnail olish
+            meta = get_video_info(file_path)
+            duration = meta['duration'] or result.get('duration', 0)
+            width = meta['width']
+            height = meta['height']
+            thumb_file = None
+            if meta['thumb_path']:
+                files_to_clean.append(meta['thumb_path'])
+                thumb_file = types.FSInputFile(meta['thumb_path'])
+
             sent_msg = await bot.send_video(
                 chat_id=user_id,
                 video=types.FSInputFile(file_path),
+                duration=duration,
+                width=width,
+                height=height,
+                thumbnail=thumb_file,
+                supports_streaming=True,
                 caption=caption_text,
                 reply_markup=markup
             )
@@ -128,7 +143,20 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
                         if comp_path != f_path:
                             files_to_clean.append(comp_path)
                             f_path = comp_path
-                    media_group.append(types.InputMediaVideo(media=types.FSInputFile(f_path), caption=cap))
+                    meta = get_video_info(f_path)
+                    thumb_f = None
+                    if meta['thumb_path']:
+                        files_to_clean.append(meta['thumb_path'])
+                        thumb_f = types.FSInputFile(meta['thumb_path'])
+                    media_group.append(types.InputMediaVideo(
+                        media=types.FSInputFile(f_path),
+                        caption=cap,
+                        duration=meta['duration'],
+                        width=meta['width'],
+                        height=meta['height'],
+                        thumbnail=thumb_f,
+                        supports_streaming=True
+                    ))
                 else:
                     media_group.append(types.InputMediaPhoto(media=types.FSInputFile(f_path), caption=cap))
             

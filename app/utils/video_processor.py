@@ -1,7 +1,55 @@
 import ffmpeg
 import os
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any
+
+def get_video_info(video_path: str) -> Dict[str, Any]:
+    """
+    Videodan davomiylik (duration), o'lchamlar (width, height) va 
+    Telegram uchun chiroyli preview thumbnail (.jpg) hosil qiladi.
+    Bu video Telegramda oppoq bo'lib qolmasligini va davomiyligi (masalan 1:01) to'g'ri chiqishini ta'minlaydi.
+    """
+    thumb_path = None
+    width = None
+    height = None
+    duration = 0
+    
+    if not os.path.exists(video_path):
+        return {'duration': 0, 'width': None, 'height': None, 'thumb_path': None}
+        
+    try:
+        probe = ffmpeg.probe(video_path)
+        format_info = probe.get('format', {})
+        duration = int(float(format_info.get('duration', 0)))
+        
+        video_stream = next((s for s in probe.get('streams', []) if s.get('codec_type') == 'video'), None)
+        if video_stream:
+            width = int(video_stream.get('width', 0)) or None
+            height = int(video_stream.get('height', 0)) or None
+            
+        base_name, _ = os.path.splitext(video_path)
+        thumb_candidate = f"{base_name}_thumb.jpg"
+        
+        # 1-sekunddagi kadrni olish (video 1s dan qisqa bo'lsa 0-sekund)
+        ss_time = 1.0 if duration > 1 else 0.0
+        (
+            ffmpeg
+            .input(video_path, ss=ss_time)
+            .output(thumb_candidate, vframes=1, **{'q:v': 2})
+            .overwrite_output()
+            .run(quiet=True)
+        )
+        if os.path.exists(thumb_candidate) and os.path.getsize(thumb_candidate) > 0:
+            thumb_path = thumb_candidate
+    except Exception as e:
+        logging.warning(f"Video preview yoki metadata olishda xatolik: {e}")
+        
+    return {
+        'duration': duration,
+        'width': width,
+        'height': height,
+        'thumb_path': thumb_path
+    }
 
 def compress_video(input_path: str, target_size_mb: int = 48) -> str:
     """
