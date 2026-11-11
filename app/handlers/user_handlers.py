@@ -135,7 +135,7 @@ async def handle_message(message: types.Message, redis: ArqRedis):
             await remove_from_cache(url_hash)
 
     # Navbatga qo'shish (guruhda foydalanuvchining havolasiga javob (reply) qilib yuborishi uchun message.message_id uzatiladi)
-    wait_msg = await message.reply("⏳ Navbatga qo'shildi...")
+    wait_msg = await message.reply("⏳ Yuklanmoqda...")
     await redis.enqueue_job(
         'download_task',
         message.chat.id,

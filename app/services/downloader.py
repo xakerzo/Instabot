@@ -25,7 +25,8 @@ class DownloaderService:
                 'Sec-Fetch-User: ?1',
                 'Upgrade-Insecure-Requests: 1',
             ],
-            'wait_for_video': (1, 3),
+            'socket_timeout': 15,
+            'writethumbnail': True,
         }
         
         # Cookies faylini tekshirish (asosan Instagram uchun)
@@ -51,7 +52,8 @@ class DownloaderService:
 
     async def _download_media(self, url: str, proxy: Optional[str] = None) -> Dict[str, Any]:
         opts = self.common_opts.copy()
-        opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+        # Tezkor yuklash: avval tayyor mp4 oqimini oladi (birlashtirish shart emas), topilmasa eng yaxshisini oladi
+        opts['format'] = 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best'
         
         # Instagram bo'lsa, cookies faylini ulaymiz
         if ('instagram.com' in url or 'instagr.am' in url) and self.cookie_file:

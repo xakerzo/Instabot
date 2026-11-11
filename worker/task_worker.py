@@ -40,27 +40,14 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
     files_to_clean: List[str] = []
     
     try:
-        # Xabar holatini yangilash
-        if message_id:
-            try:
-                await bot.edit_message_text("⏳ Yuklanmoqda...", chat_id=user_id, message_id=message_id)
-            except TelegramBadRequest:
-                pass
-
         bot_user = await bot.get_me()
         bot_username = bot_user.username
 
-        # Media yuklash
+        # Tezkor media yuklash
         result = await downloader.download(url, mode)
         for f in result.get('files', []):
             if f and f not in files_to_clean:
                 files_to_clean.append(f)
-
-        if message_id:
-            try:
-                await bot.edit_message_text("📤 Botga yuborilmoqda...", chat_id=user_id, message_id=message_id)
-            except TelegramBadRequest:
-                pass
 
         extra_caption = await database.get_setting('custom_caption', "")
         caption_text = f"❤️ @{bot_username} orqali yuklab olindi 🚀 📩"
