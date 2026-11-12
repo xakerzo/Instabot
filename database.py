@@ -3,7 +3,7 @@ import os
 import re
 import logging
 from typing import Optional, List, Dict, Any
-from sqlalchemy import Column, Integer, String, DateTime, BigInteger, Text, Boolean, func, select
+from sqlalchemy import Column, Integer, String, DateTime, BigInteger, Text, Boolean, func, select, delete, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from config import Config
@@ -72,6 +72,12 @@ async def init_db(ctx=None):
         if not res_stat.scalar():
             session.add(Stat(key='total_downloads', value=0))
             
+        # Agar mavjud foydalanuvchilarda is_active NULL bo'lsa, TRUE ga yangilash
+        try:
+            await session.execute(text("UPDATE users SET is_active = TRUE WHERE is_active IS NULL"))
+        except Exception:
+            pass
+
         await session.commit()
 
 async def add_user(user_id: int, username: Optional[str]):
@@ -100,7 +106,7 @@ async def get_all_users(only_active: bool = False) -> List[int]:
     async with AsyncSessionLocal() as session:
         stmt = select(User.id).where(User.id > 0)
         if only_active:
-            stmt = stmt.where(User.is_active.is_(True))
+            stmt = stmt.where((User.is_active.is_(True)) | (User.is_active.is_(None)))
         result = await session.execute(stmt)
         return list(result.scalars().all())
 
@@ -203,3 +209,81 @@ async def get_setting(key: str, default: str = "") -> str:
         res = await session.execute(select(Setting).where(Setting.key == key))
         setting = res.scalar()
         return setting.value if setting and setting.value is not None else default
+
+async def clear_all_cache() -> int:
+    """
+    Bazada saqlangan barcha kesh qatorlarini tozalaydi.
+    """
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(func.count(Cache.id)))
+        cnt = result.scalar() or 0
+        await session.execute(delete(Cache))
+        await session.commit()
+        return cnt
+
+async def get_admin_ids() -> List[int]:
+    """
+    Konfiguratsiyadagi (ENV) va bazadagi barcha admin ID larini yig'ib qaytaradi.
+    """
+    admins = set(Config.ADMIN_IDS)
+    try:
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(select(Setting).where(Setting.key == 'admin_ids'))
+            setting = res.scalar()
+            if setting and setting.value:
+                for part in re.findall(r'\d+', setting.value):
+                    admins.add(int(part))
+    except Exception as e:
+        logging.warning(f"Bazadan adminlarni o'qishda xatolik: {e}")
+    return list(admins)
+
+async def is_admin(user_id: int) -> bool:
+    """
+    Foydalanuvchi bot admini ekanligini tekshiradi.
+    Agar ENV yoki bazada umuman admin belgilanmagan bo'lsa,
+    birinchi murojaat qilgan foydalanuvchini avtomatik admin qiladi.
+    """
+    if not user_id or user_id <= 0:
+        return False
+    admins = await get_admin_ids()
+    if not admins:
+        # Birinchi foydalanuvchini avtomatik admin qilish
+        await add_admin(user_id)
+        logging.info(f"Botga birinchi admin avtomatik tayinlandi: {user_id}")
+        return True
+    return user_id in admins
+
+async def add_admin(user_id: int):
+    """
+    Bazaga yangi admin ID sini qo'shadi.
+    """
+    if not user_id or user_id <= 0:
+        return
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(Setting).where(Setting.key == 'admin_ids'))
+        setting = res.scalar()
+        existing = set(Config.ADMIN_IDS)
+        if setting and setting.value:
+            existing.update(int(x) for x in re.findall(r'\d+', setting.value))
+        existing.add(user_id)
+        val = ",".join(str(x) for x in sorted(existing))
+        if setting:
+            setting.value = val
+        else:
+            session.add(Setting(key='admin_ids', value=val))
+        await session.commit()
+
+async def remove_admin(user_id: int):
+    """
+    Bazadan admin ID sini o'chiradi (ENV dagilar saqlanib qoladi).
+    """
+    if not user_id:
+        return
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(Setting).where(Setting.key == 'admin_ids'))
+        setting = res.scalar()
+        if setting and setting.value:
+            existing = {int(x) for x in re.findall(r'\d+', setting.value)}
+            existing.discard(user_id)
+            setting.value = ",".join(str(x) for x in sorted(existing))
+            await session.commit()

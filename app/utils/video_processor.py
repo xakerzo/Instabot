@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any
 
 def get_video_info(video_path: str) -> Dict[str, Any]:
     """
-    Videodan davomiylik (duration), o'lchamlar (width, height) va 
+    Videodan davomiylik (duration), o'lchamlar (width, height), video kodek va 
     Telegram uchun chiroyli preview thumbnail (.jpg) hosil qiladi.
     Bu video Telegramda oppoq bo'lib qolmasligini va davomiyligi (masalan 1:01) to'g'ri chiqishini ta'minlaydi.
     """
@@ -13,9 +13,10 @@ def get_video_info(video_path: str) -> Dict[str, Any]:
     width = None
     height = None
     duration = 0
+    codec_name = ""
     
     if not os.path.exists(video_path):
-        return {'duration': 0, 'width': None, 'height': None, 'thumb_path': None}
+        return {'duration': 0, 'width': None, 'height': None, 'thumb_path': None, 'codec_name': ''}
         
     try:
         probe = ffmpeg.probe(video_path)
@@ -26,6 +27,7 @@ def get_video_info(video_path: str) -> Dict[str, Any]:
         if video_stream:
             width = int(video_stream.get('width', 0)) or None
             height = int(video_stream.get('height', 0)) or None
+            codec_name = video_stream.get('codec_name', '').lower()
             
             # Agar formatda duration bo'lmasa, streamdan olish
             if not duration:
@@ -73,7 +75,7 @@ def get_video_info(video_path: str) -> Dict[str, Any]:
                 ffmpeg
                 .input(video_path, ss=ss_time)
                 .filter('scale', 'if(gt(iw,ih),320,-2)', 'if(gt(iw,ih),-2,320)')
-                .output(thumb_candidate, vframes=1, **{'q:v': 2})
+                .output(thumb_candidate, vframes=1, pix_fmt='yuvj420p', **{'q:v': 2})
                 .overwrite_output()
                 .run(quiet=True)
             )
@@ -87,7 +89,7 @@ def get_video_info(video_path: str) -> Dict[str, Any]:
                     ffmpeg
                     .input(video_path, ss=0.0)
                     .filter('scale', 'if(gt(iw,ih),320,-2)', 'if(gt(iw,ih),-2,320)')
-                    .output(thumb_candidate, vframes=1, **{'q:v': 2})
+                    .output(thumb_candidate, vframes=1, pix_fmt='yuvj420p', **{'q:v': 2})
                     .overwrite_output()
                     .run(quiet=True)
                 )
@@ -104,7 +106,7 @@ def get_video_info(video_path: str) -> Dict[str, Any]:
                         ffmpeg
                         .input(video_path, ss=ss_time)
                         .filter('scale', 'if(gt(iw,ih),320,-2)', 'if(gt(iw,ih),-2,320)')
-                        .output(thumb_candidate, vframes=1, **{'q:v': 8})
+                        .output(thumb_candidate, vframes=1, pix_fmt='yuvj420p', **{'q:v': 8})
                         .overwrite_output()
                         .run(quiet=True)
                     )
@@ -119,7 +121,8 @@ def get_video_info(video_path: str) -> Dict[str, Any]:
         'duration': duration,
         'width': width,
         'height': height,
-        'thumb_path': thumb_path
+        'thumb_path': thumb_path,
+        'codec_name': codec_name
     }
 
 def compress_video(input_path: str, target_size_mb: int = 48) -> str:

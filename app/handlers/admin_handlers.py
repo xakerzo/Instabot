@@ -1,11 +1,13 @@
 import asyncio
 import time
 import logging
+import html
 from aiogram import Router, F, types
 from aiogram.filters import Command, BaseFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.exceptions import TelegramRetryAfter, TelegramForbiddenError, TelegramBadRequest
+from arq.connections import ArqRedis
 
 from config import Config
 import database
@@ -16,7 +18,7 @@ class IsAdmin(BaseFilter):
         user = getattr(event, 'from_user', None)
         if not user:
             return False
-        return user.id in Config.ADMIN_IDS
+        return await database.is_admin(user.id)
 
 router = Router()
 # Butun router bo'yicha faqat adminlarga ruxsat berish
@@ -36,13 +38,28 @@ async def cmd_admin(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("🛠 <b>Admin panelga xush kelibsiz:</b>", parse_mode="HTML", reply_markup=admin_main_keyboard())
 
+@router.message(Command("addadmin"))
+async def cmd_add_admin(message: types.Message):
+    parts = message.text.strip().split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        return await message.answer("ℹ️ Yangi admin qo'shish uchun: <code>/addadmin TELEGRAM_ID</code> ko'rinishida yuboring.", parse_mode="HTML")
+    new_id = int(parts[1])
+    await database.add_admin(new_id)
+    await message.answer(f"✅ Yangi admin muvaffaqiyatli qo'shildi: <code>{new_id}</code>", parse_mode="HTML")
+
 @router.callback_query(F.data == "admin_back")
 async def back_to_admin(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
     await state.clear()
-    await callback.message.edit_text("🛠 <b>Admin panelga xush kelibsiz:</b>", parse_mode="HTML", reply_markup=admin_main_keyboard())
+    text = "🛠 <b>Admin panelga xush kelibsiz:</b>"
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=admin_main_keyboard())
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=admin_main_keyboard())
 
 @router.callback_query(F.data == "admin_stats")
 async def admin_stats(callback: types.CallbackQuery):
+    await callback.answer()
     stats = await database.get_stats_summary()
     text = (
         "📊 <b>Bot statistikasi:</b>\n\n"
@@ -50,16 +67,22 @@ async def admin_stats(callback: types.CallbackQuery):
         f"🟢 Faol foydalanuvchilar: <b>{stats['active_users']}</b> ta\n"
         f"📥 Jami yuklab olishlar: <b>{stats['total_downloads']}</b> ta"
     )
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
 
 @router.callback_query(F.data == "admin_broadcast")
 async def start_broadcast(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.edit_text(
+    await callback.answer()
+    text = (
         "📢 Foydalanuvchilarga yubormoqchi bo'lgan xabaringizni yuboring:\n\n"
-        "<i>(Bekor qilish uchun '⬅️ Orqaga' tugmasini bosing)</i>",
-        parse_mode="HTML",
-        reply_markup=back_to_admin_keyboard()
+        "<i>(Bekor qilish uchun '⬅️ Orqaga' tugmasini bosing)</i>"
     )
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
     await state.set_state(AdminStates.waiting_for_broadcast)
 
 async def execute_broadcast(bot, admin_chat_id: int, message: types.Message, users: list, wait_msg_id: int):
@@ -168,59 +191,144 @@ async def perform_broadcast(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data == "admin_caption")
 async def start_caption_set(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
     current = await database.get_setting('custom_caption', "")
     display_text = current if current else "<i>O'rnatilmagan</i>"
-    await callback.message.edit_text(
+    text = (
         f"✍️ <b>Hozirgi qo'shimcha izoh (caption):</b>\n\n{display_text}\n\n"
-        "Yangi izohni yuboring (o'chirish uchun <b>0</b> deb yozing):",
-        parse_mode="HTML",
-        reply_markup=back_to_admin_keyboard()
+        "Yangi izohni yuboring (o'chirish uchun <b>0</b> deb yozing):\n\n"
+        "<i>Eslatma: Matnni Telegramda qalin (bold), qiya (italic) qilib yuborsangiz xuddi shunday saqlanadi.</i>"
     )
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
+    except Exception:
+        safe_display = html.escape(current) if current else "<i>O'rnatilmagan</i>"
+        safe_text = (
+            f"✍️ <b>Hozirgi qo'shimcha izoh (caption):</b>\n\n{safe_display}\n\n"
+            "Yangi izohni yuboring (o'chirish uchun <b>0</b> deb yozing):"
+        )
+        try:
+            await callback.message.edit_text(safe_text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
+        except Exception:
+            await callback.message.answer(safe_text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
     await state.set_state(AdminStates.waiting_for_caption)
 
 @router.message(AdminStates.waiting_for_caption)
 async def set_caption(message: types.Message, state: FSMContext):
-    await state.clear()
-    val = "" if message.text.strip() == "0" else message.text.strip()
-    await database.set_setting('custom_caption', val)
-    await message.answer("✅ Izoh muvaffaqiyatli saqlandi!", reply_markup=back_to_admin_keyboard())
+    raw = message.html_text or message.text or ""
+    raw = raw.strip()
+    if raw == "0":
+        await state.clear()
+        await database.set_setting('custom_caption', "")
+        return await message.answer("✅ Qo'shimcha izoh o'chirildi!", reply_markup=back_to_admin_keyboard())
+
+    try:
+        await message.answer(f"🔍 <b>Yangi izoh ko'rinishi:</b>\n\n{raw}", parse_mode="HTML")
+        await database.set_setting('custom_caption', raw)
+        await state.clear()
+        await message.answer("✅ Izoh muvaffaqiyatli saqlandi!", reply_markup=back_to_admin_keyboard())
+    except TelegramBadRequest as e:
+        await message.answer(
+            f"❌ <b>Xatolik: HTML formatlash noto'g'ri!</b>\n\n"
+            f"Xatolik: <i>{e.message}</i>\n\n"
+            "Iltimos, qayta yuboring yoki o'chirish uchun <b>0</b> deb yozing:",
+            parse_mode="HTML",
+            reply_markup=back_to_admin_keyboard()
+        )
+        await state.set_state(AdminStates.waiting_for_caption)
 
 @router.callback_query(F.data == "admin_start_msg")
 async def start_msg_settings(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
     current = await database.get_setting('start_message', "")
     display = current if current else "<i>Standart xabar ishlatilmoqda</i>"
-    await callback.message.edit_text(
+    text = (
         f"💬 <b>Hozirgi Start xabari:</b>\n\n{display}\n\n"
         "Yangi Start xabarini yuboring (standart holatga qaytarish uchun <b>0</b> deb yozing):\n\n"
-        "<i>Eslatma: HTML teglaridan (<b>, <i>, <code>) foydalanishingiz mumkin.</i>",
-        parse_mode="HTML",
-        reply_markup=back_to_admin_keyboard()
+        "<i>Eslatma: Matnni Telegramda qalin (bold), qiya (italic) qilib yuborsangiz xuddi shunday saqlanadi.</i>"
     )
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
+    except Exception:
+        safe_display = html.escape(current) if current else "<i>Standart xabar ishlatilmoqda</i>"
+        safe_text = (
+            f"💬 <b>Hozirgi Start xabari:</b>\n\n{safe_display}\n\n"
+            "Yangi Start xabarini yuboring (standart holatga qaytarish uchun <b>0</b> deb yozing):"
+        )
+        try:
+            await callback.message.edit_text(safe_text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
+        except Exception:
+            await callback.message.answer(safe_text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
     await state.set_state(AdminStates.waiting_for_start_msg)
 
 @router.message(AdminStates.waiting_for_start_msg)
 async def set_start_msg(message: types.Message, state: FSMContext):
-    await state.clear()
-    val = "" if message.text.strip() == "0" else message.text.strip()
-    await database.set_setting('start_message', val)
-    await message.answer("✅ Start xabari muvaffaqiyatli saqlandi!", reply_markup=back_to_admin_keyboard())
+    raw = message.html_text or message.text or ""
+    raw = raw.strip()
+    if raw == "0":
+        await state.clear()
+        await database.set_setting('start_message', "")
+        return await message.answer("✅ Start xabari standart holatga qaytarildi!", reply_markup=back_to_admin_keyboard())
+
+    try:
+        await message.answer(f"🔍 <b>Yangi Start xabari ko'rinishi:</b>\n\n{raw}", parse_mode="HTML")
+        await database.set_setting('start_message', raw)
+        await state.clear()
+        await message.answer("✅ Start xabari muvaffaqiyatli saqlandi!", reply_markup=back_to_admin_keyboard())
+    except TelegramBadRequest as e:
+        await message.answer(
+            f"❌ <b>Xatolik: HTML formatlash noto'g'ri!</b>\n\n"
+            f"Xatolik: <i>{e.message}</i>\n\n"
+            "Iltimos, qayta yuboring yoki standart holatga qaytarish uchun <b>0</b> deb yozing:",
+            parse_mode="HTML",
+            reply_markup=back_to_admin_keyboard()
+        )
+        await state.set_state(AdminStates.waiting_for_start_msg)
+
+@router.callback_query(F.data == "admin_clear_cache")
+async def admin_clear_cache(callback: types.CallbackQuery, redis: ArqRedis):
+    await callback.answer("🗑 Kesh tozalanmoqda...")
+    deleted_cnt = await database.clear_all_cache()
+    try:
+        keys = await redis.keys("music_search:*")
+        if keys:
+            await redis.delete(*keys)
+    except Exception:
+        pass
+    text = (
+        f"🗑 <b>Kesh muvaffaqiyatli tozalandi!</b>\n\n"
+        f"Bazada saqlangan <b>{deleted_cnt}</b> ta media keshi o'chirildi.\n"
+        f"Endi bot barcha videolarni yangi thumbnail va eng so'nggi sozlamalar bilan yuklaydi."
+    )
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
 
 @router.callback_query(F.data == "admin_channels")
 async def list_channels(callback: types.CallbackQuery):
+    await callback.answer()
     channels = await database.get_channels()
-    await callback.message.edit_text("📢 <b>Majburiy obuna kanallari:</b>", parse_mode="HTML", reply_markup=channels_list_keyboard(channels))
+    text = "📢 <b>Majburiy obuna kanallari:</b>"
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=channels_list_keyboard(channels))
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=channels_list_keyboard(channels))
 
 @router.callback_query(F.data == "add_channel")
 async def add_ch_start(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.edit_text(
+    await callback.answer()
+    text = (
         "📢 <b>Kanal qo'shish:</b>\n\n"
         "1. Kanalning <code>@username</code>ini yuboring (masalan: <code>@mening_kanalim</code>),\n"
         "2. Kanal ID'sini kiriting (masalan: <code>-1001234567890</code>),\n"
         "3. Yoki kanaldan biror xabarni shu yerga <b>Forward (uzatish)</b> qiling:\n\n"
-        "<i>⚠️ Eslatma: Bot ushbu kanalda ADMIN qilingan bo'lishi shart!</i>",
-        parse_mode="HTML",
-        reply_markup=back_to_admin_keyboard()
+        "<i>⚠️ Eslatma: Bot ushbu kanalda ADMIN qilingan bo'lishi shart!</i>"
     )
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=back_to_admin_keyboard())
     await state.set_state(AdminStates.waiting_for_channel_id)
 
 @router.message(AdminStates.waiting_for_channel_id)
@@ -310,4 +418,8 @@ async def del_ch(callback: types.CallbackQuery):
     await database.delete_channel(chat_id)
     await callback.answer("❌ Kanal o'chirildi")
     channels = await database.get_channels()
-    await callback.message.edit_text("📢 <b>Majburiy obuna kanallari:</b>", parse_mode="HTML", reply_markup=channels_list_keyboard(channels))
+    text = "📢 <b>Majburiy obuna kanallari:</b>"
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=channels_list_keyboard(channels))
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=channels_list_keyboard(channels))

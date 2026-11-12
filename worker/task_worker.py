@@ -63,6 +63,7 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
             caption_text += f"\n\n{extra_caption}"
 
         builder = InlineKeyboardBuilder()
+        builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data=f"save:{url_hash}"))
         builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
         markup = builder.as_markup()
 
@@ -70,21 +71,40 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
 
         if media_type == 'video':
             file_path = result['file_path']
+            meta = get_video_info(file_path)
+            codec = meta.get('codec_name', '').lower()
             
-            # Agar format .mp4 bo'lmasa (masalan .webm), Telegram yaxshi qabul qilishi uchun .mp4 ga o'giramiz
-            if file_path and not file_path.lower().endswith('.mp4') and os.path.exists(file_path):
-                mp4_target = os.path.splitext(file_path)[0] + ".mp4"
+            # Agar format .mp4 bo'lmasa (masalan .webm) yoki video kodeki h264 bo'lmasa (masalan av01, vp9),
+            # Telegram yaxshi qabul qilishi va oppoq kadr chiqmasligi uchun .mp4 (h264+aac) ga o'giramiz
+            needs_transcode = False
+            if file_path and os.path.exists(file_path):
+                if not file_path.lower().endswith('.mp4'):
+                    needs_transcode = True
+                elif codec and codec not in ['h264', 'avc1']:
+                    needs_transcode = True
+
+            if needs_transcode and file_path and os.path.exists(file_path):
+                mp4_target = os.path.splitext(file_path)[0] + "_std.mp4"
                 try:
                     (
                         ffmpeg
                         .input(file_path)
-                        .output(mp4_target, vcodec='libx264', acodec='aac', preset='veryfast', movflags='+faststart')
+                        .output(
+                            mp4_target,
+                            vcodec='libx264',
+                            acodec='aac',
+                            pix_fmt='yuv420p',
+                            preset='veryfast',
+                            movflags='+faststart'
+                        )
                         .overwrite_output()
                         .run(quiet=True)
                     )
                     if os.path.exists(mp4_target) and os.path.getsize(mp4_target) > 0:
                         files_to_clean.append(mp4_target)
                         file_path = mp4_target
+                        # Qayta metadata olish
+                        meta = get_video_info(file_path)
                 except Exception as ex:
                     logging.warning(f"Video formatini MP4 ga o'tkazishda xatolik: {ex}")
 
@@ -103,13 +123,13 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
                     files_to_clean.append(compressed_path)
                     file_path = compressed_path
                     file_size = os.path.getsize(file_path)
+                    meta = get_video_info(file_path)
 
             if file_size > 50 * 1024 * 1024:
                 await bot.send_message(user_id, "⚠️ Video hajmi Telegram limitidan (50MB) katta bo'lgani uchun yuborib bo'lmadi.")
                 return
 
             # Video uchun metadata va chiroyli preview thumbnail olish
-            meta = get_video_info(file_path)
             duration = meta['duration'] or result.get('duration', 0)
             width = meta['width']
             height = meta['height']
@@ -118,8 +138,9 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
                 files_to_clean.append(meta['thumb_path'])
                 thumb_file = types.FSInputFile(meta['thumb_path'])
 
-            # Video tagidagi tugmalar: Qo'shiqni yuklab olish va Guruhga qo'shish
+            # Video tagidagi tugmalar: Saqlash, Qo'shiqni yuklab olish va Guruhga qo'shish
             v_builder = InlineKeyboardBuilder()
+            v_builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data=f"save:{url_hash}"))
             v_builder.row(types.InlineKeyboardButton(text="📩 Qo'shiqni yuklab olish", callback_data=f"audio:{url_hash}"))
             v_builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
             video_markup = v_builder.as_markup()

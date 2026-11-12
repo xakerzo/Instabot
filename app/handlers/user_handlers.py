@@ -6,6 +6,8 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from arq.connections import ArqRedis
+from arq.constants import default_queue_name
+from aiogram.fsm.context import FSMContext
 
 from config import Config
 from database import (
@@ -14,8 +16,10 @@ from database import (
     add_user,
     get_channels,
     get_setting,
-    add_to_cache
+    add_to_cache,
+    is_admin
 )
+from app.keyboards.admin_keyboards import admin_main_keyboard
 from app.utils.validators import extract_media_url
 from app.services.downloader import DownloaderService
 from app.services.music_service import MusicService
@@ -53,8 +57,9 @@ async def cmd_start(message: types.Message):
     bot_info = await message.bot.get_me()
     builder = InlineKeyboardBuilder()
     
-    # Agar foydalanuvchi admin/owner bo'lsa, admin panel tugmasini birinchi qatorga chiqaramiz!
-    if user_id in Config.ADMIN_IDS:
+    # Foydalanuvchi admin yoki bot egasi ekanligini bazadan/ENV dan tekshirish
+    is_user_admin = await is_admin(user_id)
+    if is_user_admin:
         builder.row(types.InlineKeyboardButton(text="🛠 Admin Panel", callback_data="admin_back"))
 
     builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_info.username}?startgroup=true"))
@@ -74,27 +79,47 @@ async def cmd_start(message: types.Message):
             "Yuklab olish uchun havola (link) yoki video yuboring:"
         )
 
-    if user_id in Config.ADMIN_IDS:
+    if is_user_admin:
         start_text += "\n\n👑 <b>Siz bot adminisiz!</b>\nAdmin panelni ochish uchun /admin buyrug'ini yuboring yoki quyidagi <b>🛠 Admin Panel</b> tugmasini bosing."
     
-    await message.answer(
-        start_text,
-        parse_mode="HTML",
-        reply_markup=builder.as_markup()
-    )
+    try:
+        await message.answer(
+            start_text,
+            parse_mode="HTML",
+            reply_markup=builder.as_markup()
+        )
+    except Exception as e:
+        logging.warning(f"Start xabari HTML formatida xatolik ({e}), xavfsiz matn yuborilmoqda")
+        try:
+            await message.answer(
+                start_text,
+                parse_mode=None,
+                reply_markup=builder.as_markup()
+            )
+        except Exception:
+            default_text = "👋 Assalomu alaykum!\n\nYuklab olish uchun havola (link) yuboring:"
+            await message.answer(default_text, reply_markup=builder.as_markup())
 
 @router.message(Command("admin", "panel"))
-async def cmd_not_admin(message: types.Message):
+async def cmd_not_admin(message: types.Message, state: FSMContext):
     user_id = message.from_user.id if message.from_user else message.chat.id
+    if await is_admin(user_id):
+        await state.clear()
+        return await message.answer("🛠 <b>Admin panelga xush kelibsiz:</b>", parse_mode="HTML", reply_markup=admin_main_keyboard())
+
     await message.answer(
         f"❌ <b>Kechirasiz, siz bot admini emassiz!</b>\n\n"
         f"🆔 Sizning Telegram ID raqamingiz: <code>{user_id}</code>\n\n"
         f"💡 <b>Admin bo'lish uchun:</b>\n"
         f"Coolify panelingizda (Environment Variables bo'limida):\n"
         f"<code>ADMIN_IDS={user_id}</code>\n"
-        f"o'zgaruvchisini qo'shing va botni <b>Redeploy</b> qiling.",
+        f"o'zgaruvchisini qo'shing yoki mavjud admin <code>/addadmin {user_id}</code> yozsin.",
         parse_mode="HTML"
     )
+
+@router.callback_query(F.data.startswith("admin_") | (F.data == "admin_back") | (F.data == "add_channel") | F.data.startswith("del_ch:"))
+async def unauthorized_admin_callback(callback: types.CallbackQuery):
+    await callback.answer("❌ Siz bot admini emassiz!", show_alert=True)
 
 @router.message(F.text)
 async def handle_message(message: types.Message, redis: ArqRedis):
@@ -149,8 +174,9 @@ async def handle_message(message: types.Message, redis: ArqRedis):
         builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_user.username}?startgroup=true"))
         markup = builder.as_markup()
 
-        # Video uchun maxsus klaviatura (Qo'shiqni yuklab olish bilan)
+        # Video uchun maxsus klaviatura (Saqlash va Qo'shiqni yuklab olish bilan)
         v_builder = InlineKeyboardBuilder()
+        v_builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data=f"save:{url_hash}"))
         v_builder.row(types.InlineKeyboardButton(text="📩 Qo'shiqni yuklab olish", callback_data=f"audio:{url_hash}"))
         v_builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_user.username}?startgroup=true"))
         video_markup = v_builder.as_markup()
@@ -168,7 +194,7 @@ async def handle_message(message: types.Message, redis: ArqRedis):
 
     # Navbatga qo'shish (guruhda foydalanuvchining havolasiga javob (reply) qilib yuborishi uchun message.message_id uzatiladi)
     try:
-        queue_size = await redis.zcard(redis.default_queue_name)
+        queue_size = await redis.zcard(default_queue_name)
     except Exception:
         queue_size = 0
 
@@ -277,7 +303,7 @@ async def handle_audio_download(callback: types.CallbackQuery, redis: ArqRedis):
         )
         
     try:
-        queue_size = await redis.zcard(redis.default_queue_name)
+        queue_size = await redis.zcard(default_queue_name)
     except Exception:
         queue_size = 0
     wait_text = f"⏳ Navbatga olindi (Navbatda: {queue_size} ta)..." if queue_size > 0 else "🎵 Video audiosi yuklanmoqda..."
@@ -308,7 +334,7 @@ async def handle_yt_audio_download(callback: types.CallbackQuery, redis: ArqRedi
     await callback.answer("⏳ So'rovingiz navbatga qo'yildi...")
 
     try:
-        queue_size = await redis.zcard(redis.default_queue_name)
+        queue_size = await redis.zcard(default_queue_name)
     except Exception:
         queue_size = 0
 
@@ -323,6 +349,36 @@ async def handle_yt_audio_download(callback: types.CallbackQuery, redis: ArqRedi
         callback.message.message_id
     )
 
+@router.callback_query(F.data.startswith("save:"))
+async def handle_save_media(callback: types.CallbackQuery):
+    url_hash = callback.data.split(":", 1)[1]
+    cached = await get_from_cache(url_hash)
+    if not cached or not cached.file_id:
+        return await callback.answer("❌ Fayl topilmadi.", show_alert=True)
+    
+    # Agar guruhda bo'lsa, foydalanuvchining shaxsiy chatiga nusxasini yuboramiz
+    if callback.message.chat.type in ['group', 'supergroup']:
+        try:
+            bot_user = await callback.bot.get_me()
+            extra_caption = await get_setting('custom_caption', "")
+            caption = f"❤️ @{bot_user.username} orqali yuklab olindi 🚀"
+            if extra_caption:
+                caption += f"\n\n{extra_caption}"
+            
+            if cached.file_type == 'video':
+                await callback.bot.send_video(callback.from_user.id, cached.file_id, caption=caption, supports_streaming=True)
+            elif cached.file_type == 'photo':
+                await callback.bot.send_photo(callback.from_user.id, cached.file_id, caption=caption)
+            elif cached.file_type == 'audio':
+                await callback.bot.send_audio(callback.from_user.id, cached.file_id, caption=caption)
+            
+            await callback.answer("✅ Video shaxsiy xabaringizga (lichka) yuborildi!", show_alert=True)
+        except Exception:
+            await callback.answer("⚠️ Bot sizga xabar yuborishi uchun avval botga kirib /start bosing!", show_alert=True)
+    else:
+        # Shaxsiy chatda bo'lsa
+        await callback.answer("💾 Ushbu faylni saqlash uchun ustiga bosib 'Saqlangan xabarlar' (Saved Messages) ga yuborishingiz mumkin!", show_alert=True)
+
 @router.callback_query(F.data.startswith("show_vid:"))
 async def handle_show_video(callback: types.CallbackQuery):
     url_hash = callback.data.split(":", 1)[1]
@@ -333,6 +389,7 @@ async def handle_show_video(callback: types.CallbackQuery):
     await callback.answer()
     bot_user = await callback.bot.get_me()
     v_builder = InlineKeyboardBuilder()
+    v_builder.row(types.InlineKeyboardButton(text="💾 Saqlash", callback_data=f"save:{url_hash}"))
     v_builder.row(types.InlineKeyboardButton(text="📩 Qo'shiqni yuklab olish", callback_data=f"audio:{url_hash}"))
     v_builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_user.username}?startgroup=true"))
 

@@ -8,6 +8,7 @@ def admin_main_keyboard():
     builder.row(types.InlineKeyboardButton(text="💬 Start xabarini sozlash", callback_data="admin_start_msg"))
     builder.row(types.InlineKeyboardButton(text="✍️ Video izohi (Caption)", callback_data="admin_caption"))
     builder.row(types.InlineKeyboardButton(text="📊 Bot statistikasi", callback_data="admin_stats"))
+    builder.row(types.InlineKeyboardButton(text="🗑 Keshni tozalash", callback_data="admin_clear_cache"))
     return builder.as_markup()
 
 def channels_list_keyboard(channels):
