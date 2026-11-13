@@ -76,7 +76,10 @@ class MusicService:
             opts['cookiefile'] = cookie_file
 
         if Config.TIKTOK_PROXY and any(d in url.lower() for d in ['tiktok.com', 'douyin.com']):
-            opts['proxy'] = Config.TIKTOK_PROXY
+            proxy = Config.TIKTOK_PROXY
+            if proxy.startswith('socks5://'):
+                proxy = 'socks5h://' + proxy[9:]
+            opts['proxy'] = proxy
 
         def _get_info():
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -117,7 +120,10 @@ class MusicService:
                 opts_audio['cookiefile'] = cookie_file
 
             if Config.TIKTOK_PROXY and any(d in url.lower() for d in ['tiktok.com', 'douyin.com']):
-                opts_audio['proxy'] = Config.TIKTOK_PROXY
+                proxy = Config.TIKTOK_PROXY
+                if proxy.startswith('socks5://'):
+                    proxy = 'socks5h://' + proxy[9:]
+                opts_audio['proxy'] = proxy
 
             def _download_sample():
                 with yt_dlp.YoutubeDL(opts_audio) as ydl_s:

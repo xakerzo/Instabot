@@ -40,7 +40,11 @@ class DownloaderService:
     def _get_proxy(self, url: str = "") -> Optional[str]:
         # Agar URL TikTok bo'lsa va maxsus TikTok proxy sozlangan bo'lsa
         if Config.TIKTOK_PROXY and any(d in url.lower() for d in ['tiktok.com', 'douyin.com']):
-            return Config.TIKTOK_PROXY
+            proxy = Config.TIKTOK_PROXY
+            # DNS so'rovlari ham Cloudflare orqali o'tishi uchun socks5h ga aylantiramiz
+            if proxy.startswith('socks5://'):
+                proxy = 'socks5h://' + proxy[9:]
+            return proxy
 
         if not Config.USE_PROXY:
             return None
