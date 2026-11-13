@@ -60,6 +60,7 @@ class Config:
     MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB") or 49)
     USE_PROXY = os.getenv("USE_PROXY", "False").lower() == "true"
     PROXY_LIST_PATH = clean_str(os.getenv("PROXY_LIST_PATH")) or "./proxies.txt"
+    TIKTOK_PROXY = clean_str(os.getenv("TIKTOK_PROXY"))
     CACHE_TTL = 3600 * 24 * 7 
 
 def get_redis_settings() -> RedisSettings:

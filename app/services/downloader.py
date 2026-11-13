@@ -37,7 +37,11 @@ class DownloaderService:
         # Cookies faylini tekshirish (asosan Instagram uchun)
         self.cookie_file = 'cookies.txt' if os.path.exists('cookies.txt') else ('Cookie.txt' if os.path.exists('Cookie.txt') else None)
 
-    def _get_proxy(self) -> Optional[str]:
+    def _get_proxy(self, url: str = "") -> Optional[str]:
+        # Agar URL TikTok bo'lsa va maxsus TikTok proxy sozlangan bo'lsa
+        if Config.TIKTOK_PROXY and any(d in url.lower() for d in ['tiktok.com', 'douyin.com']):
+            return Config.TIKTOK_PROXY
+
         if not Config.USE_PROXY:
             return None
         if os.path.exists(Config.PROXY_LIST_PATH):
@@ -48,7 +52,8 @@ class DownloaderService:
         return None
 
     async def download(self, url: str, mode: str = 'video') -> Dict[str, Any]:
-        proxy = self._get_proxy()
+        proxy = self._get_proxy(url)
+        logging.info(f"📥 Yuklash boshlanmoqda: {url} | Proxy: {proxy or 'To`g`ridan-to`g`ri (yo`q)'}")
         
         if mode == 'audio':
             return await self._download_full_audio(url, proxy)
