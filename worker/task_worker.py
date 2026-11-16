@@ -6,7 +6,7 @@ from typing import List, Optional
 from arq.connections import RedisSettings
 from aiogram import Bot, types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 
 from config import Config, setup_environment, get_redis_settings
 from app.services.downloader import DownloaderService
@@ -14,10 +14,25 @@ from app.utils.video_processor import compress_video, get_video_info
 import database
 import ffmpeg
 
+async def safe_send(coro_fn, max_retries: int = 3):
+    """
+    Telegram flood limit (Too Many Requests / RetryAfter) xatoliklarini ushlab,
+    avtomatik kutilgan vaqt o'tgach qayta yuboradi.
+    """
+    for attempt in range(max_retries):
+        try:
+            return await coro_fn()
+        except TelegramRetryAfter as e:
+            wait_time = e.retry_after + 1
+            logging.warning(f"Telegram flood limit: {wait_time}s kutilmoqda...")
+            await asyncio.sleep(wait_time)
+        except Exception:
+            raise
+
 def cleanup_download_folder(folder_path: str, max_age_seconds: int = 600):
     """
-    Downloads papkasini tekshirib, eski yoki qolib ketgan fayllarni tozalaydi.
-    Server diski to'lib qolmasligini kafolatlaydi.
+    Downloads papkasini tekshirib, faqat eski yoki qolib ketgan fayllarni tozalaydi.
+    Hozir yuklanayotgan parallel yuklamalarning .part fayllariga teginmaydi!
     """
     if not os.path.exists(folder_path):
         return
@@ -26,10 +41,19 @@ def cleanup_download_folder(folder_path: str, max_age_seconds: int = 600):
         fpath = os.path.join(folder_path, fname)
         if os.path.isfile(fpath):
             try:
-                # Chala fayllar (.part, .temp) yoki muddati o'tgan fayllar
-                if fname.endswith(('.part', '.temp', '.ytdl')) or (now - os.path.getmtime(fpath) > max_age_seconds):
+                age = now - os.path.getmtime(fpath)
+                # Startup paytida (max_age_seconds=0) barchasini tozalaydi
+                if max_age_seconds == 0:
+                    os.remove(fpath)
+                    continue
+
+                # Normal ish paytida: faqat muddati o'tgan yoki kamida 5 daqiqadan oshgan chala fayllar
+                if age > max_age_seconds:
                     os.remove(fpath)
                     logging.info(f"Eski fayl tozalandi: {fpath}")
+                elif fname.endswith(('.part', '.temp', '.ytdl')) and age > 300:
+                    os.remove(fpath)
+                    logging.info(f"Eski chala fayl tozalandi: {fpath}")
             except Exception as e:
                 logging.warning(f"Faylni tozalashda xatolik ({fpath}): {e}")
 
@@ -145,7 +169,7 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
             v_builder.row(types.InlineKeyboardButton(text="👉 Guruhga qo'shish 💥", url=f"https://t.me/{bot_username}?startgroup=true"))
             video_markup = v_builder.as_markup()
 
-            sent_msg = await bot.send_video(
+            sent_msg = await safe_send(lambda: bot.send_video(
                 chat_id=user_id,
                 video=types.FSInputFile(file_path),
                 duration=duration,
@@ -156,20 +180,20 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
                 caption=caption_text,
                 reply_to_message_id=reply_to_id,
                 reply_markup=video_markup
-            )
+            ))
             if sent_msg and sent_msg.video:
                 await database.add_to_cache(url_hash, sent_msg.video.file_id, 'video', file_size, original_url=url)
 
         elif media_type == 'photo':
             file_path = result['file_path']
             file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
-            sent_msg = await bot.send_photo(
+            sent_msg = await safe_send(lambda: bot.send_photo(
                 chat_id=user_id,
                 photo=types.FSInputFile(file_path),
                 caption=caption_text,
                 reply_to_message_id=reply_to_id,
                 reply_markup=markup
-            )
+            ))
             if sent_msg and sent_msg.photo:
                 await database.add_to_cache(url_hash, sent_msg.photo[-1].file_id, 'photo', file_size, original_url=url)
 
@@ -206,20 +230,20 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
                 chunks = [media_group[i:i + 10] for i in range(0, len(media_group), 10)]
                 for c_idx, chunk in enumerate(chunks):
                     r_id = reply_to_id if c_idx == 0 else None
-                    await bot.send_media_group(chat_id=user_id, media=chunk, reply_to_message_id=r_id)
-                await bot.send_message(chat_id=user_id, text=f"❤️ @{bot_username} orqali yuklab olindi 🚀", reply_markup=markup, reply_to_message_id=reply_to_id)
+                    await safe_send(lambda: bot.send_media_group(chat_id=user_id, media=chunk, reply_to_message_id=r_id))
+                await safe_send(lambda: bot.send_message(chat_id=user_id, text=f"❤️ @{bot_username} orqali yuklab olindi 🚀", reply_markup=markup, reply_to_message_id=reply_to_id))
 
         elif media_type == 'audio':
             file_path = result['file_path']
             file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
-            sent_msg = await bot.send_audio(
+            sent_msg = await safe_send(lambda: bot.send_audio(
                 chat_id=user_id,
                 audio=types.FSInputFile(file_path),
                 caption=caption_text,
                 title=result.get('title', 'Audio'),
                 reply_to_message_id=reply_to_id,
                 reply_markup=markup
-            )
+            ))
             if sent_msg and sent_msg.audio:
                 await database.add_to_cache(url_hash, sent_msg.audio.file_id, 'audio', file_size, original_url=url)
                 audio_hash = downloader.get_url_hash(url + "_audio")
@@ -234,15 +258,18 @@ async def download_task(ctx, user_id: int, url: str, mode: str = 'video', messag
         logging.error(f"Download task error for {url}: {error_msg}")
         
         user_message = "❌ Yuklab olishda xatolik yuz berdi."
-        if "empty media response" in error_msg.lower() or "private" in error_msg.lower():
+        err_lower = error_msg.lower()
+        if "empty media response" in err_lower or "private" in err_lower:
             user_message = "❌ Bu post yopiq (private) profilga tegishli yoki o'chirib tashlangan. Bot faqat ochiq postlarni yuklay oladi."
-        elif "rate-limit" in error_msg.lower() or "login required" in error_msg.lower():
-            user_message = "⚠️ Platforma cheklovi yuz berdi. Iltimos, birozdan so'ng qayta urinib ko'ring."
-        elif "file is too big" in error_msg.lower():
+        elif any(k in err_lower for k in ["rate-limit", "rate limit", "429", "too many requests", "login required", "checkpoint", "challenge", "please wait"]):
+            user_message = "⚠️ Platforma cheklovi (ketma-ket juda ko'p so'rov yuborildi). Iltimos, 1-2 daqiqa kutib qayta urinib ko'ring."
+        elif "file is too big" in err_lower or "telegram limitidan" in err_lower:
             user_message = "⚠️ Fayl hajmi juda katta bo'lgani uchun uni Telegram orqali yuborib bo'lmadi."
+        elif "timeout" in err_lower or "timed out" in err_lower:
+            user_message = "⚠️ Server ulanishida vaqt tugadi (Timeout). Iltimos, qayta urinib ko'ring."
 
         try:
-            await bot.send_message(user_id, user_message)
+            await safe_send(lambda: bot.send_message(user_id, user_message))
         except Exception:
             pass
 
